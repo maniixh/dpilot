@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.*
+
+# dev session token written by the server in --dev mode
+apps/server/.dev-token
+
+# generated at compile time
+apps/server/src/generated/
+
+# superpowers scratch
+.superpowers/
+
+.DS_Store
+Thumbs.db

@@ -1,0 +1,22 @@
+{
+  "name": "dpilot",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter \"@dpilot/server\" --filter \"@dpilot/web\" dev",
+    "build": "bun run --filter \"@dpilot/web\" build",
+    "compile": "bun run build && bun run --filter \"@dpilot/server\" compile",
+    "test": "bun test",
+    "typecheck": "bun run --filter \"*\" typecheck",
+    "lint": "biome check .",
+    "format": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.6",
+    "typescript": "^7.0.2"
+  }
+}

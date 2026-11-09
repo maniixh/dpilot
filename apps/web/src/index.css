@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-chart: #eaf0f5;
+  --color-ink: #1b2b3f;
+  --color-slate: #5b6b7f;
+  --color-rule: #c9d4df;
+  --color-flag: #f2b705;
+  --color-running: #1f7a4d;
+  --color-down: #b4232c;
+}
+
+@layer base {
+  html {
+    @apply bg-chart text-ink font-sans antialiased;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-flag);
+    outline-offset: 2px;
+  }
+}
