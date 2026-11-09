@@ -1,11 +1,15 @@
 import { homedir } from "node:os";
 import { createApp } from "../app.ts";
+import { createDockerHubVersions } from "../catalog/versions.ts";
 import { createDockerClient } from "../docker/client.ts";
 import { resolveDockerEndpoints } from "../docker/endpoint.ts";
+import { createDockerEngineApi } from "../docker/engine-api.ts";
+import { createInstanceService } from "../instances/service.ts";
 import { type AssetSource, staticHandler } from "../static/assets.ts";
 import { CliUsageError, HELP_TEXT, parseCliArgs } from "./args.ts";
 import { openBrowser } from "./browser.ts";
 import { PortInUseError, startServer } from "./listen.ts";
+import { generatePassword, isPortFree } from "./runtime.ts";
 import { generateSessionToken, loadOrCreateDevToken } from "./token.ts";
 
 export interface RunCliOptions {
@@ -19,6 +23,7 @@ export interface RunCliOptions {
 
 const VITE_DEV_URL = "http://localhost:5173";
 const DOCKER_TIMEOUT_MS = 2000;
+const DOCKER_HUB_TIMEOUT_MS = 5000;
 
 /** Returns a process exit code, or null while the server keeps running. */
 export function runCli(options: RunCliOptions): number | null {
@@ -65,12 +70,23 @@ function run(options: RunCliOptions): number | null {
       resolveDockerEndpoints({ env: process.env, platform: process.platform, homeDir: homedir() }),
     timeoutMs: DOCKER_TIMEOUT_MS,
   });
+  const instances = createInstanceService({
+    docker: createDockerEngineApi(docker),
+    isPortFree,
+    generatePassword,
+  });
+  const versions = createDockerHubVersions({
+    get: (url) => fetch(url, { signal: AbortSignal.timeout(DOCKER_HUB_TIMEOUT_MS) }),
+    now: Date.now,
+  });
   const app = createApp({
     token,
     version: options.version,
     startedAt: Date.now(),
     now: Date.now,
     docker,
+    instances,
+    versions,
     staticFiles: args.dev ? null : staticHandler(options.assets),
   });
 

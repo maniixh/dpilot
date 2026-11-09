@@ -6,8 +6,22 @@ Dpilot is a single binary. Run it, and it opens a browser tab where you can star
 containers (MySQL, MariaDB, PostgreSQL and more) and work with their schemas and data. See
 [docs/PLAN.md](docs/PLAN.md) for the roadmap.
 
-> Status: milestone M0. The app starts, authenticates the browser and checks Docker. Database
-> features arrive in later milestones.
+> Status: milestone M1. Dpilot creates, starts, stops and removes MySQL, MariaDB and PostgreSQL
+> containers. Schema and data tools arrive in later milestones.
+
+## What you can do
+
+- Pick an engine and a version (listed from Docker Hub, with a built-in fallback) and create a
+  database. Dpilot downloads the image, creates a data volume and starts the container, and
+  shows progress until the server accepts connections.
+- Copy the host, port, user, password or a connection URL.
+- Start, stop, restart or remove a database. Removing keeps its data volume unless you choose
+  to delete it.
+- Watch CPU and memory use, and read the latest log lines.
+- Download a Docker Compose file that runs the same database without Dpilot.
+
+Dpilot names its containers `dpilot-<name>` and volumes `dpilot_<name>_data`, and labels them
+`dpilot.managed=true`. It only lists and changes containers with that label.
 
 ## Requirements
 
@@ -46,7 +60,7 @@ dpilot --help
 ## Layout
 
 ```
-apps/server     Hono API, Docker client, CLI and the compiled-binary entry
+apps/server     Hono API, Docker Engine API client, instance service, CLI and binary entry
 apps/web        React + Vite UI
 packages/shared Types shared by server and web
 ```
@@ -60,4 +74,9 @@ Dpilot can start containers and run SQL, so it only accepts requests from your o
   `SameSite=Strict` session cookie and then removes it from the address bar.
 - Requests must use a loopback `Host` (blocks DNS rebinding), and state-changing requests must
   come from a loopback `Origin` (blocks cross-site requests).
-- Errors returned to the browser never include internal details.
+- Database ports are published on `127.0.0.1` only, so other machines can't reach them.
+- Database passwords live in the container's environment, as the official images expect. Anyone
+  who can run `docker inspect` on this machine can read them; use Dpilot for local development
+  data only.
+- Errors returned to the browser never include internal details. Docker's own error messages
+  are passed through so you can act on them.

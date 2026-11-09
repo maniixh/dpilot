@@ -1,5 +1,5 @@
 import type { DockerStatus, HealthResponse } from "@dpilot/shared";
-import type { ReactNode } from "react";
+import { Fact, Facts } from "../../ui/Facts.tsx";
 import { formatUptime } from "./format.ts";
 
 interface StatusScreenProps {
@@ -18,32 +18,7 @@ export function StatusScreen({ health, docker, checking, onCheckAgain }: StatusS
         <FixDocker docker={docker} checking={checking} onCheckAgain={onCheckAgain} />
       )}
 
-      <div className="grid gap-10 md:grid-cols-2">
-        <Facts title="Docker">
-          {docker?.state === "running" ? (
-            <>
-              <Fact term="Engine">{docker.version}</Fact>
-              <Fact term="API">{docker.apiVersion}</Fact>
-              <Fact term="Platform">
-                {docker.os}/{docker.arch}
-              </Fact>
-              <Fact term="Endpoint" mono>
-                {docker.endpoint}
-              </Fact>
-            </>
-          ) : (
-            <Fact term="Engine">{docker ? "Not reachable" : "Checking…"}</Fact>
-          )}
-        </Facts>
-
-        <Facts title="Dpilot">
-          <Fact term="Version">{health?.version ?? "…"}</Fact>
-          <Fact term="Running for">{health ? formatUptime(health.uptimeSeconds) : "…"}</Fact>
-          <Fact term="Listening on" mono>
-            {window.location.host}
-          </Fact>
-        </Facts>
-      </div>
+      <SystemFacts health={health} docker={docker} />
     </div>
   );
 }
@@ -109,20 +84,39 @@ function FixDocker({
   );
 }
 
-function Facts({ title, children }: { title: string; children: ReactNode }) {
+export function SystemFacts({
+  health,
+  docker,
+}: {
+  health: HealthResponse | undefined;
+  docker: DockerStatus | undefined;
+}) {
   return (
-    <section>
-      <h2 className="border-b border-rule pb-2 text-lg font-semibold">{title}</h2>
-      <dl className="divide-y divide-rule">{children}</dl>
-    </section>
-  );
-}
+    <div className="grid gap-10 md:grid-cols-2">
+      <Facts title="Docker">
+        {docker?.state === "running" ? (
+          <>
+            <Fact term="Engine">{docker.version}</Fact>
+            <Fact term="API">{docker.apiVersion}</Fact>
+            <Fact term="Platform">
+              {docker.os}/{docker.arch}
+            </Fact>
+            <Fact term="Endpoint" mono>
+              {docker.endpoint}
+            </Fact>
+          </>
+        ) : (
+          <Fact term="Engine">{docker ? "Not reachable" : "Checking…"}</Fact>
+        )}
+      </Facts>
 
-function Fact({ term, mono, children }: { term: string; mono?: boolean; children: ReactNode }) {
-  return (
-    <div className="flex flex-wrap justify-between gap-x-6 gap-y-1 py-3">
-      <dt className="text-slate">{term}</dt>
-      <dd className={mono ? "font-mono text-sm break-all" : "font-medium"}>{children}</dd>
+      <Facts title="Dpilot">
+        <Fact term="Version">{health?.version ?? "…"}</Fact>
+        <Fact term="Running for">{health ? formatUptime(health.uptimeSeconds) : "…"}</Fact>
+        <Fact term="Listening on" mono>
+          {window.location.host}
+        </Fact>
+      </Facts>
     </div>
   );
 }

@@ -1,35 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { DockerStatus } from "@dpilot/shared";
-import { type AppDeps, createApp } from "./app.ts";
-import { sessionCookieName } from "./auth/session.ts";
-
-const token = "c".repeat(64);
-const runningDocker: DockerStatus = {
-  state: "running",
-  endpoint: "npipe:////./pipe/docker_engine",
-  version: "27.3.1",
-  apiVersion: "1.47",
-  os: "linux",
-  arch: "amd64",
-};
+import type { AppDeps } from "./app.ts";
+import { authedHeaders as authed, buildTestApp, runningDocker } from "./testing/build-app.ts";
 
 function buildApp(overrides: Partial<AppDeps> = {}) {
-  return createApp({
-    token,
-    version: "0.1.0",
-    startedAt: 1_000,
-    now: () => 61_500,
-    docker: { status: async () => runningDocker },
-    staticFiles: null,
-    ...overrides,
-  });
+  return buildTestApp(overrides).app;
 }
-
-const authed = {
-  host: "127.0.0.1:7311",
-  cookie: `${sessionCookieName("127.0.0.1:7311")}=${token}`,
-};
-
 describe("createApp", () => {
   test("requires a session for API routes", async () => {
     const res = await buildApp().request("/api/health", { headers: { host: "127.0.0.1:7311" } });

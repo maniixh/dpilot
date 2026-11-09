@@ -1,67 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createServer, type Server, type Socket } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import {
+  closeFakeEngines,
+  type FakeHandler,
+  missingEndpoint,
+  startFakeEngine,
+} from "../testing/fake-docker-engine.ts";
 import { createDockerClient } from "./client.ts";
-import { type DockerEndpoint, UnsupportedDockerHostError } from "./endpoint.ts";
+import { UnsupportedDockerHostError } from "./endpoint.ts";
+import { DockerUnavailableError } from "./types.ts";
 
-interface FakeResponse {
-  status: number;
-  body: string;
-}
-
-/** Returns null to leave the request hanging. */
-type FakeHandler = (request: { method: string; path: string }) => FakeResponse | null;
-
-const servers: { server: Server; sockets: Set<Socket> }[] = [];
-
-afterEach(async () => {
-  await Promise.all(
-    servers.splice(0).map(
-      ({ server, sockets }) =>
-        new Promise<void>((resolve) => {
-          for (const socket of sockets) socket.destroy();
-          server.close(() => resolve());
-        }),
-    ),
-  );
-});
-
-function uniqueSocketPath(): string {
-  const id = `dpilot-test-${process.pid}-${crypto.randomUUID()}`;
-  return process.platform === "win32" ? `\\\\.\\pipe\\${id}` : join(tmpdir(), `${id}.sock`);
-}
-
-/**
- * Minimal HTTP/1.1 responder on a named pipe (Windows) or unix socket, like the Docker daemon.
- * Uses node:net because Bun's node:http server cannot listen on Windows named pipes.
- */
-async function startFakeEngine(handler: FakeHandler): Promise<DockerEndpoint> {
-  const socketPath = uniqueSocketPath();
-  const sockets = new Set<Socket>();
-  const server = createServer((socket) => {
-    sockets.add(socket);
-    socket.once("close", () => sockets.delete(socket));
-    socket.once("data", (chunk) => {
-      const [method = "", path = ""] =
-        chunk.toString("latin1").split("\r\n", 1)[0]?.split(" ") ?? [];
-      const response = handler({ method, path });
-      if (!response) return;
-      socket.end(
-        `HTTP/1.1 ${response.status} X\r\nContent-Type: application/json\r\n` +
-          `Content-Length: ${Buffer.byteLength(response.body)}\r\nConnection: close\r\n\r\n${response.body}`,
-      );
-    });
-  });
-  servers.push({ server, sockets });
-  await new Promise<void>((resolve) => server.listen(socketPath, resolve));
-  return { transport: "socket", socketPath, label: `fake://${socketPath}` };
-}
-
-function missingEndpoint(): DockerEndpoint {
-  const socketPath = uniqueSocketPath();
-  return { transport: "socket", socketPath, label: `missing://${socketPath}` };
-}
+afterEach(closeFakeEngines);
 
 const versionBody = { Version: "27.3.1", ApiVersion: "1.47", Os: "linux", Arch: "amd64" };
 
@@ -74,7 +22,7 @@ function respondWithVersion(): FakeHandler {
 
 describe("createDockerClient().status", () => {
   test("reports the engine version from GET /version over a socket", async () => {
-    const endpoint = await startFakeEngine(respondWithVersion());
+    const { endpoint } = await startFakeEngine(respondWithVersion());
     const client = createDockerClient({ resolveEndpoints: () => [endpoint], timeoutMs: 2000 });
 
     expect(await client.status()).toEqual({
@@ -89,7 +37,7 @@ describe("createDockerClient().status", () => {
 
   test("falls through to the next endpoint when the first is unreachable", async () => {
     const missing = missingEndpoint();
-    const live = await startFakeEngine(respondWithVersion());
+    const { endpoint: live } = await startFakeEngine(respondWithVersion());
     const client = createDockerClient({
       resolveEndpoints: () => [missing, live],
       timeoutMs: 2000,
@@ -119,7 +67,7 @@ describe("createDockerClient().status", () => {
   });
 
   test("treats a non-2xx response as unreachable", async () => {
-    const endpoint = await startFakeEngine(() => ({ status: 500, body: "boom" }));
+    const { endpoint } = await startFakeEngine(() => ({ status: 500, body: "boom" }));
     const client = createDockerClient({ resolveEndpoints: () => [endpoint], timeoutMs: 2000 });
 
     const status = await client.status();
@@ -129,7 +77,7 @@ describe("createDockerClient().status", () => {
   });
 
   test("treats a malformed /version body as unreachable", async () => {
-    const endpoint = await startFakeEngine(() => ({
+    const { endpoint } = await startFakeEngine(() => ({
       status: 200,
       body: JSON.stringify({ hello: "world" }),
     }));
@@ -139,7 +87,7 @@ describe("createDockerClient().status", () => {
   });
 
   test("gives up on an engine that never answers after the timeout", async () => {
-    const endpoint = await startFakeEngine(() => null);
+    const { endpoint } = await startFakeEngine(() => null);
     const client = createDockerClient({ resolveEndpoints: () => [endpoint], timeoutMs: 150 });
 
     const started = performance.now();
@@ -162,5 +110,71 @@ describe("createDockerClient().status", () => {
       triedEndpoints: [],
       reason: "Unsupported DOCKER_HOST scheme: ssh://x",
     });
+  });
+});
+
+describe("createDockerClient().request", () => {
+  function versionThen(handler: FakeHandler): FakeHandler {
+    return (req) =>
+      req.path === "/version" ? { status: 200, body: JSON.stringify(versionBody) } : handler(req);
+  }
+
+  test("discovers a working endpoint once and reuses it", async () => {
+    const engine = await startFakeEngine(versionThen(() => ({ status: 200, body: "[]" })));
+    const client = createDockerClient({
+      resolveEndpoints: () => [missingEndpoint(), engine.endpoint],
+      timeoutMs: 2000,
+    });
+
+    const first = await client.request({ method: "GET", path: "/containers/json" });
+    await client.request({ method: "GET", path: "/containers/json" });
+
+    expect(first.status).toBe(200);
+    expect(engine.requests.map((r) => r.path)).toEqual([
+      "/version",
+      "/containers/json",
+      "/containers/json",
+    ]);
+  });
+
+  test("throws DockerUnavailableError with the reason when no endpoint answers", async () => {
+    const client = createDockerClient({
+      resolveEndpoints: () => [missingEndpoint()],
+      timeoutMs: 2000,
+    });
+
+    const promise = client.request({ method: "GET", path: "/containers/json" });
+
+    await expect(promise).rejects.toBeInstanceOf(DockerUnavailableError);
+  });
+
+  test("forgets a dead endpoint and rediscovers on the next call", async () => {
+    const first = await startFakeEngine(versionThen(() => ({ status: 200, body: "[]" })));
+    let endpoints = [first.endpoint];
+    const client = createDockerClient({ resolveEndpoints: () => endpoints, timeoutMs: 2000 });
+    await client.request({ method: "GET", path: "/a" });
+
+    await first.close();
+    await expect(client.request({ method: "GET", path: "/b" })).rejects.toBeInstanceOf(
+      DockerUnavailableError,
+    );
+
+    const second = await startFakeEngine(versionThen(() => ({ status: 204, body: "" })));
+    endpoints = [second.endpoint];
+    const res = await client.request({ method: "POST", path: "/c" });
+    expect(res.status).toBe(204);
+  });
+
+  test("status() also primes the endpoint used by request()", async () => {
+    const engine = await startFakeEngine(versionThen(() => ({ status: 200, body: "{}" })));
+    const client = createDockerClient({
+      resolveEndpoints: () => [engine.endpoint],
+      timeoutMs: 2000,
+    });
+
+    await client.status();
+    await client.request({ method: "GET", path: "/x" });
+
+    expect(engine.requests.map((r) => r.path)).toEqual(["/version", "/x"]);
   });
 });

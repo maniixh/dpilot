@@ -1,11 +1,17 @@
-import { request } from "node:http";
 import type { DockerStatus } from "@dpilot/shared";
 import { z } from "zod";
 import type { DockerEndpoint } from "./endpoint.ts";
-import type { DockerClient } from "./types.ts";
+import { DockerTransportError, dockerRequest } from "./http.ts";
+import {
+  type DockerCallOptions,
+  type DockerConnection,
+  type DockerResponse,
+  DockerUnavailableError,
+} from "./types.ts";
 
 export interface DockerClientOptions {
   resolveEndpoints: () => DockerEndpoint[];
+  /** Default idle timeout for requests. */
   timeoutMs: number;
 }
 
@@ -19,83 +25,88 @@ const versionResponseSchema = z.object({
 });
 
 /**
- * Talks to the Docker Engine API with node:http, which (unlike fetch) supports
- * Windows named pipes in Bun via `socketPath`.
+ * Finds a reachable Docker Engine endpoint, remembers it, and sends requests to it.
+ * A transport failure forgets the endpoint so the next call rediscovers one.
  */
-export function createDockerClient(options: DockerClientOptions): DockerClient {
-  return {
-    async status(): Promise<DockerStatus> {
-      let endpoints: DockerEndpoint[];
+export function createDockerClient(options: DockerClientOptions): DockerConnection {
+  let current: DockerEndpoint | null = null;
+
+  async function discover(): Promise<DockerStatus> {
+    let endpoints: DockerEndpoint[];
+    try {
+      endpoints = options.resolveEndpoints();
+    } catch (error) {
+      return { state: "unreachable", triedEndpoints: [], reason: errorMessage(error) };
+    }
+
+    const failures: string[] = [];
+    for (const endpoint of endpoints) {
       try {
-        endpoints = options.resolveEndpoints();
-      } catch (error) {
-        return { state: "unreachable", triedEndpoints: [], reason: errorMessage(error) };
-      }
-
-      const failures: string[] = [];
-      for (const endpoint of endpoints) {
-        try {
-          const version = versionResponseSchema.parse(
-            await getJson(endpoint, "/version", options.timeoutMs),
-          );
-          return {
-            state: "running",
-            endpoint: endpoint.label,
-            version: version.Version,
-            apiVersion: version.ApiVersion,
-            os: version.Os,
-            arch: version.Arch,
-          };
-        } catch (error) {
-          failures.push(`${endpoint.label}: ${errorMessage(error)}`);
+        const res = await dockerRequest(endpoint, {
+          method: "GET",
+          path: "/version",
+          idleTimeoutMs: options.timeoutMs,
+          maxBytes: MAX_RESPONSE_BYTES,
+        });
+        if (res.status < 200 || res.status >= 300) {
+          throw new Error(`Docker responded with HTTP ${res.status}`);
         }
+        const version = versionResponseSchema.parse(parseJson(res.body));
+        current = endpoint;
+        return {
+          state: "running",
+          endpoint: endpoint.label,
+          version: version.Version,
+          apiVersion: version.ApiVersion,
+          os: version.Os,
+          arch: version.Arch,
+        };
+      } catch (error) {
+        failures.push(`${endpoint.label}: ${errorMessage(error)}`);
       }
+    }
 
-      return {
-        state: "unreachable",
-        triedEndpoints: endpoints.map((endpoint) => endpoint.label),
-        reason: failures.join("; ") || "No Docker endpoints to try",
-      };
+    current = null;
+    return {
+      state: "unreachable",
+      triedEndpoints: endpoints.map((endpoint) => endpoint.label),
+      reason: failures.join("; ") || "No Docker endpoints to try",
+    };
+  }
+
+  return {
+    status: discover,
+
+    async request(call: DockerCallOptions): Promise<DockerResponse> {
+      if (!current) {
+        const status = await discover();
+        if (status.state === "unreachable") throw new DockerUnavailableError(status.reason);
+      }
+      const endpoint = current;
+      if (!endpoint) throw new DockerUnavailableError("No Docker endpoint");
+      try {
+        return await dockerRequest(endpoint, {
+          idleTimeoutMs: options.timeoutMs,
+          maxBytes: MAX_RESPONSE_BYTES,
+          ...call,
+        });
+      } catch (error) {
+        if (error instanceof DockerTransportError) {
+          current = null;
+          throw new DockerUnavailableError(`${endpoint.label}: ${error.message}`);
+        }
+        throw error;
+      }
     },
   };
 }
 
-function getJson(endpoint: DockerEndpoint, path: string, timeoutMs: number): Promise<unknown> {
-  const target =
-    endpoint.transport === "socket"
-      ? { socketPath: endpoint.socketPath }
-      : { hostname: new URL(endpoint.baseUrl).hostname, port: new URL(endpoint.baseUrl).port };
-
-  return new Promise((resolve, reject) => {
-    const req = request({ ...target, path, method: "GET", headers: { host: "docker" } }, (res) => {
-      const chunks: Buffer[] = [];
-      let size = 0;
-      res.on("data", (chunk: Buffer) => {
-        size += chunk.length;
-        if (size > MAX_RESPONSE_BYTES) {
-          req.destroy(new Error("Docker response too large"));
-          return;
-        }
-        chunks.push(chunk);
-      });
-      res.on("end", () => {
-        const status = res.statusCode ?? 0;
-        if (status < 200 || status >= 300) {
-          reject(new Error(`Docker responded with HTTP ${status}`));
-          return;
-        }
-        try {
-          resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-        } catch {
-          reject(new Error("Docker returned invalid JSON"));
-        }
-      });
-      res.on("error", reject);
-    });
-    req.setTimeout(timeoutMs, () => req.destroy(new Error(`Timed out after ${timeoutMs}ms`)));
-    req.on("error", reject);
-    req.end();
-  });
+function parseJson(body: Uint8Array): unknown {
+  try {
+    return JSON.parse(new TextDecoder().decode(body));
+  } catch {
+    throw new Error("Docker returned invalid JSON");
+  }
 }
 
 function errorMessage(error: unknown): string {

@@ -1,7 +1,12 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import { Link, Route, Switch } from "wouter";
 import { ApiError } from "./api/client.ts";
 import { useDockerStatus, useHealth } from "./api/status.ts";
+import { HomeScreen } from "./features/instances/HomeScreen.tsx";
+import { InstanceScreen } from "./features/instances/InstanceScreen.tsx";
+import { NewInstanceScreen } from "./features/instances/NewInstanceScreen.tsx";
 import { StatusScreen } from "./features/status/StatusScreen.tsx";
+import { shellView } from "./features/status/shell.ts";
 import { type SessionState, useSession } from "./session/use-session.ts";
 
 export function App() {
@@ -14,12 +19,20 @@ export function App() {
     (error) => error instanceof ApiError && error.status === 401,
   );
   const failed = !unauthorized && (health.isError || docker.isError);
+  const dockerRunning = docker.data?.state === "running";
+  const [seenRunning, setSeenRunning] = useState(false);
+  useEffect(() => {
+    if (dockerRunning) setSeenRunning(true);
+  }, [dockerRunning]);
+  const view = shellView(docker.data, seenRunning);
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-5xl flex-col px-6 py-8 sm:px-10">
       <header className="mb-16 flex items-center gap-3">
-        <span aria-hidden className="size-4 rotate-45 bg-flag" />
-        <span className="text-xl font-semibold tracking-tight">dpilot</span>
+        <Link href="/" className="flex items-center gap-3">
+          <span aria-hidden className="size-4 rotate-45 bg-flag" />
+          <span className="text-xl font-semibold tracking-tight">dpilot</span>
+        </Link>
       </header>
 
       <main className="flex-1">
@@ -29,6 +42,33 @@ export function App() {
           <SessionMessage state="invalid-link" />
         ) : failed ? (
           <ServerDown />
+        ) : view !== "status" ? (
+          <>
+            {view === "app-docker-lost" && (
+              <p role="alert" className="mb-10 border-l-2 border-down pl-4">
+                Dpilot lost contact with Docker. Your databases may have stopped. Dpilot checks
+                again every 10 seconds.
+              </p>
+            )}
+            <Switch>
+              <Route path="/">
+                <HomeScreen health={health.data} docker={docker.data} />
+              </Route>
+              <Route path="/new">
+                <NewInstanceScreen />
+              </Route>
+              <Route path="/instances/:name">
+                {(params) => <InstanceScreen key={params.name} name={params.name} />}
+              </Route>
+              <Route>
+                <Message title="There's nothing at this address.">
+                  <Link href="/" className="underline underline-offset-4">
+                    Go to your databases
+                  </Link>
+                </Message>
+              </Route>
+            </Switch>
+          </>
         ) : (
           <StatusScreen
             health={health.data}
