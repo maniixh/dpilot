@@ -46,6 +46,7 @@ both servers.
 | Command             | What it does                                                         |
 | ------------------- | -------------------------------------------------------------------- |
 | `bun test`          | Run all tests                                                        |
+| `DPILOT_INTEGRATION=1 bun test apps/server/src/engines/integration.test.ts` | Run the engine adapters against real database containers (needs Docker) |
 | `bun run typecheck` | Type-check every workspace                                           |
 | `bun run lint`      | Check formatting and lint rules (Biome)                              |
 | `bun run format`    | Apply formatting and safe lint fixes                                 |

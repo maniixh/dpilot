@@ -39,6 +39,12 @@ jobs:
       - name: Test
         run: bun test
 
+      - name: Integration tests
+        if: runner.os == 'Linux'
+        env:
+          DPILOT_INTEGRATION: "1"
+        run: bun test apps/server/src/engines/integration.test.ts --timeout 600000
+
       - name: Compile binary
         run: bun run compile
 
