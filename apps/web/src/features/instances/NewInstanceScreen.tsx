@@ -1,19 +1,19 @@
 import {
   type CreateInstanceRequest,
   createInstanceRequestSchema,
-  ENGINES,
   type EngineId,
   getEngine,
 } from "@dpilot/shared";
-import { type FormEvent, type ReactNode, useId, useState } from "react";
+import { type FormEvent, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { ApiError } from "../../api/client.ts";
 import { useCreateInstance, useEngineVersions } from "../../api/instances.ts";
 import { buttonClass } from "../../ui/button.ts";
+import { EnginePicker, Field, inputClass } from "../../ui/form.tsx";
 
-type Field = keyof CreateInstanceRequest;
+type InstanceField = keyof CreateInstanceRequest;
 
-const FIELD_HINTS: Record<Field, string> = {
+const FIELD_HINTS: Record<InstanceField, string> = {
   engine: "Choose an engine.",
   version: "Choose a version.",
   name: "Use 2 to 31 lowercase letters, digits or hyphens, starting with a letter.",
@@ -31,7 +31,7 @@ export function NewInstanceScreen() {
   const [port, setPort] = useState("");
   const [password, setPassword] = useState("");
   const [database, setDatabase] = useState("");
-  const [invalid, setInvalid] = useState<ReadonlySet<Field>>(new Set());
+  const [invalid, setInvalid] = useState<ReadonlySet<InstanceField>>(new Set());
   const versions = useEngineVersions(engine);
 
   const info = getEngine(engine);
@@ -49,7 +49,7 @@ export function NewInstanceScreen() {
       database: database.trim() === "" ? undefined : database.trim(),
     });
     if (!parsed.success) {
-      setInvalid(new Set(parsed.error.issues.map((issue) => issue.path[0] as Field)));
+      setInvalid(new Set(parsed.error.issues.map((issue) => issue.path[0] as InstanceField)));
       return;
     }
     setInvalid(new Set());
@@ -67,31 +67,13 @@ export function NewInstanceScreen() {
         <h1 className="mt-4 text-4xl font-semibold tracking-tight">New database server</h1>
       </div>
 
-      <fieldset>
-        <legend className="mb-3 text-lg font-semibold">Engine</legend>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {ENGINES.map((option) => (
-            <label
-              key={option.id}
-              className="flex cursor-pointer flex-col gap-1 rounded-md border border-rule bg-white/40 p-4 has-checked:border-ink has-checked:bg-white has-focus-visible:outline-3 has-focus-visible:outline-flag"
-            >
-              <input
-                type="radio"
-                name="engine"
-                value={option.id}
-                checked={engine === option.id}
-                onChange={() => {
-                  setEngine(option.id);
-                  setVersion(null);
-                }}
-                className="sr-only"
-              />
-              <span className="text-lg font-semibold">{option.label}</span>
-              <span className="text-sm text-slate">Port {option.defaultPort} by default</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <EnginePicker
+        value={engine}
+        onChange={(id) => {
+          setEngine(id);
+          setVersion(null);
+        }}
+      />
 
       <Field
         label="Version"
@@ -221,40 +203,9 @@ export function NewInstanceScreen() {
   );
 }
 
-const inputClass =
-  "w-full rounded-md border border-rule bg-white px-3 py-2 text-ink aria-invalid:border-down disabled:opacity-60";
-
 function versionHint(source: "docker-hub" | "fallback" | undefined): string {
   if (source === "fallback") {
     return "Docker Hub couldn't be reached, so this is Dpilot's built-in list.";
   }
   return "Newest first, from Docker Hub. The image downloads when you create the server.";
-}
-
-function Field({
-  label,
-  hint,
-  error,
-  invalid,
-  children,
-}: {
-  label: string;
-  hint: string;
-  error?: string;
-  invalid: boolean;
-  children: (id: string, describedBy: string) => ReactNode;
-}) {
-  const id = useId();
-  const hintId = `${id}-hint`;
-  return (
-    <div className="flex flex-col gap-2">
-      <label htmlFor={id} className="text-lg font-semibold">
-        {label}
-      </label>
-      {children(id, hintId)}
-      <p id={hintId} className={`text-sm ${invalid ? "text-down" : "text-slate"}`}>
-        {invalid && error ? error : hint}
-      </p>
-    </div>
-  );
 }

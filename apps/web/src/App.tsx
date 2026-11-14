@@ -2,6 +2,10 @@ import { type ReactNode, useEffect, useState } from "react";
 import { Link, Route, Switch } from "wouter";
 import { ApiError } from "./api/client.ts";
 import { useDockerStatus, useHealth } from "./api/status.ts";
+import {
+  EditConnectionScreen,
+  NewConnectionScreen,
+} from "./features/connections/ConnectionScreens.tsx";
 import { Sidebar } from "./features/explorer/Sidebar.tsx";
 import { HomeScreen } from "./features/instances/HomeScreen.tsx";
 import { InstanceScreen } from "./features/instances/InstanceScreen.tsx";
@@ -63,6 +67,12 @@ export function App() {
               </Route>
               <Route path="/instances/:name">
                 {(params) => <InstanceScreen key={params.name} name={params.name} />}
+              </Route>
+              <Route path="/connections/new">
+                <NewConnectionScreen />
+              </Route>
+              <Route path="/connections/:id/edit">
+                {(params) => <EditConnectionScreen key={params.id} id={params.id} />}
               </Route>
               <Route>
                 <Message title="There's nothing at this address.">
