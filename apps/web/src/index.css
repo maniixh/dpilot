@@ -22,4 +22,14 @@
     outline: 3px solid var(--color-flag);
     outline-offset: 2px;
   }
+
+  /* Tree items wrap their children, so the ring goes on the item's own row. */
+  [role="treeitem"]:focus-visible {
+    outline: none;
+  }
+
+  [role="treeitem"]:focus-visible > .tree-row {
+    outline: 3px solid var(--color-flag);
+    outline-offset: -1px;
+  }
 }

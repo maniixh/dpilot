@@ -2,12 +2,14 @@ import { type ReactNode, useEffect, useState } from "react";
 import { Link, Route, Switch } from "wouter";
 import { ApiError } from "./api/client.ts";
 import { useDockerStatus, useHealth } from "./api/status.ts";
+import { Sidebar } from "./features/explorer/Sidebar.tsx";
 import { HomeScreen } from "./features/instances/HomeScreen.tsx";
 import { InstanceScreen } from "./features/instances/InstanceScreen.tsx";
 import { NewInstanceScreen } from "./features/instances/NewInstanceScreen.tsx";
 import { StatusScreen } from "./features/status/StatusScreen.tsx";
 import { shellView } from "./features/status/shell.ts";
 import { type SessionState, useSession } from "./session/use-session.ts";
+import { useMediaQuery } from "./ui/use-media-query.ts";
 
 export function App() {
   const session = useSession();
@@ -25,9 +27,11 @@ export function App() {
     if (dockerRunning) setSeenRunning(true);
   }, [dockerRunning]);
   const view = shellView(docker.data, seenRunning);
+  const appView = ready && !unauthorized && !failed && view !== "status";
+  const width = appView ? "max-w-7xl" : "max-w-5xl";
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-5xl flex-col px-6 py-8 sm:px-10">
+    <div className={`mx-auto flex min-h-dvh flex-col px-6 py-8 sm:px-10 ${width}`}>
       <header className="mb-16 flex items-center gap-3">
         <Link href="/" className="flex items-center gap-3">
           <span aria-hidden className="size-4 rotate-45 bg-flag" />
@@ -43,7 +47,7 @@ export function App() {
         ) : failed ? (
           <ServerDown />
         ) : view !== "status" ? (
-          <>
+          <AppLayout>
             {view === "app-docker-lost" && (
               <p role="alert" className="mb-10 border-l-2 border-down pl-4">
                 Dpilot lost contact with Docker. Your database servers may have stopped. Dpilot
@@ -68,7 +72,7 @@ export function App() {
                 </Message>
               </Route>
             </Switch>
-          </>
+          </AppLayout>
         ) : (
           <StatusScreen
             health={health.data}
@@ -78,6 +82,32 @@ export function App() {
           />
         )}
       </main>
+    </div>
+  );
+}
+
+/** The sidebar sits beside the content on wide screens and in a disclosure on narrow ones. */
+function AppLayout({ children }: { children: ReactNode }) {
+  const wide = useMediaQuery("(min-width: 768px)");
+  if (!wide) {
+    return (
+      <div className="flex flex-col gap-10">
+        <details className="border-y border-rule py-3">
+          <summary className="cursor-pointer font-medium">Browse</summary>
+          <div className="pt-4">
+            <Sidebar />
+          </div>
+        </details>
+        <div className="min-w-0">{children}</div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-start gap-10">
+      <aside className="sticky top-8 max-h-[calc(100dvh-4rem)] w-72 shrink-0 overflow-y-auto pr-2">
+        <Sidebar />
+      </aside>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }
