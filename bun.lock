@@ -6,6 +6,7 @@
       "name": "dpilot",
       "devDependencies": {
         "@biomejs/biome": "^2.6.6",
+        "@types/bun": "^1.4.4",
         "typescript": "^7.0.2",
       },
     },

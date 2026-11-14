@@ -10,7 +10,7 @@
     "dev": "bun --watch src/main.ts --dev",
     "start": "bun src/main.ts",
     "compile": "bun scripts/compile.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
     "@dpilot/shared": "workspace:*",

@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "bun run typecheck && vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
+    "dev": "bunx vite",
+    "build": "bun run typecheck && bunx vite build",
+    "preview": "bunx vite preview",
+    "typecheck": "bunx tsc --noEmit && bunx tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "@dpilot/shared": "workspace:*",
