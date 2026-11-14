@@ -1,11 +1,18 @@
+import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import { createApp } from "../app.ts";
 import { createDockerHubVersions } from "../catalog/versions.ts";
+import { createConnectionService } from "../connections/service.ts";
 import { createDockerClient } from "../docker/client.ts";
 import { resolveDockerEndpoints } from "../docker/endpoint.ts";
 import { createDockerEngineApi } from "../docker/engine-api.ts";
+import { bunSqlFactory } from "../engines/bun-sql.ts";
+import { createExplorer } from "../explorer/service.ts";
 import { createInstanceService } from "../instances/service.ts";
 import { type AssetSource, staticHandler } from "../static/assets.ts";
+import { openStore } from "../store/database.ts";
+import { fileKeyStore } from "../store/key-file.ts";
 import { CliUsageError, HELP_TEXT, parseCliArgs } from "./args.ts";
 import { openBrowser } from "./browser.ts";
 import { PortInUseError, startServer } from "./listen.ts";
@@ -79,6 +86,16 @@ function run(options: RunCliOptions): number | null {
     get: (url) => fetch(url, { signal: AbortSignal.timeout(DOCKER_HUB_TIMEOUT_MS) }),
     now: Date.now,
   });
+  const dataDir = join(homedir(), ".dpilot");
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  const connections = createConnectionService({
+    db: openStore(join(dataDir, "dpilot.db")),
+    keys: fileKeyStore(join(dataDir, "key")),
+    now: () => new Date(),
+    randomId: () => crypto.randomUUID(),
+    onChanged: (id) => void explorer.forget(`c.${id}`),
+  });
+  const explorer = createExplorer({ instances, connections, sql: bunSqlFactory });
   const app = createApp({
     token,
     version: options.version,
@@ -87,6 +104,8 @@ function run(options: RunCliOptions): number | null {
     docker,
     instances,
     versions,
+    connections,
+    explorer,
     staticFiles: args.dev ? null : staticHandler(options.assets),
   });
 
