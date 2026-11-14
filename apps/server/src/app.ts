@@ -87,10 +87,7 @@ function errorResponse(error: Error, c: Context) {
     );
   }
   if (error instanceof ConnectionError) {
-    return c.json(
-      { error: error.code, message: error.message },
-      CONNECTION_STATUS[error.code],
-    );
+    return c.json({ error: error.code, message: error.message }, CONNECTION_STATUS[error.code]);
   }
   if (error instanceof TargetError) {
     return c.json({ error: error.code, message: error.message }, TARGET_STATUS[error.code]);

@@ -125,9 +125,9 @@ test("does not touch a key that fails the check", async () => {
   await svc.create({ ...input, password: "s3cret" });
   const wrong = new MemoryKeyStore(crypto.getRandomValues(new Uint8Array(32)));
   const later = service(wrong);
-  await expect(
-    later.create({ ...input, label: "Other", password: "x" }),
-  ).rejects.toMatchObject({ code: "key_mismatch" });
+  await expect(later.create({ ...input, label: "Other", password: "x" })).rejects.toMatchObject({
+    code: "key_mismatch",
+  });
   expect(wrong.creates).toBe(0);
 });
 
