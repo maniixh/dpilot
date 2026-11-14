@@ -7,6 +7,32 @@ export {
   engineIdSchema,
   getEngine,
 } from "./catalog.ts";
+export {
+  type ConnectionInput,
+  type ConnectionPatch,
+  type ConnectionTestRequest,
+  connectionInputSchema,
+  connectionPatchSchema,
+  connectionTestRequestSchema,
+  type DatabaseEntry,
+  type ObjectGroups,
+  type ParsedTargetId,
+  parseTargetId,
+  type SavedConnection,
+  type SchemaEntry,
+  type ServerInfo,
+  type ServerVariable,
+  type TargetErrorCode,
+  type TargetId,
+  type TargetSummary,
+  type TargetsResponse,
+  type TestResult,
+  type TlsMode,
+  type TlsSettings,
+  targetIdSchema,
+  tlsModeSchema,
+  tlsSettingsSchema,
+} from "./connections.ts";
 export type { DockerStatus } from "./docker.ts";
 export type { HealthResponse } from "./health.ts";
 export {
