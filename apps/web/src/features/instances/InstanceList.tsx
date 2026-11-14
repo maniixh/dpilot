@@ -12,22 +12,22 @@ export function InstanceList() {
     <section aria-labelledby="databases-heading" className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <h1 id="databases-heading" className="text-4xl font-semibold tracking-tight">
-          Databases
+          Database servers
         </h1>
         {instances.data && instances.data.length > 0 && (
           <Link href="/new" className={buttonClass.primary}>
-            New database
+            New server
           </Link>
         )}
       </div>
 
       {instances.isPending ? (
-        <p className="text-slate">Loading databases…</p>
+        <p className="text-slate">Loading servers…</p>
       ) : instances.isError ? (
         <p role="alert" className="border-l-2 border-down pl-4">
           {instances.error instanceof ApiError
             ? instances.error.message
-            : "Dpilot couldn't load your databases."}
+            : "Dpilot couldn't load your servers."}
         </p>
       ) : instances.data.length === 0 ? (
         <EmptyState />
@@ -65,13 +65,13 @@ function InstanceRow({ instance }: { instance: InstanceSummary }) {
 function EmptyState() {
   return (
     <div className="max-w-prose py-6">
-      <p className="text-2xl font-semibold tracking-tight">No databases yet.</p>
+      <p className="text-2xl font-semibold tracking-tight">No database servers yet.</p>
       <p className="mt-3 text-lg text-slate">
         Pick an engine and a version, and Dpilot runs it in Docker on this machine. Only programs on
         this computer can connect to it.
       </p>
       <Link href="/new" className={`${buttonClass.primary} mt-6`}>
-        New database
+        New server
       </Link>
     </div>
   );

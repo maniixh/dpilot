@@ -46,13 +46,13 @@ export function InstanceScreen({ name }: { name: string }) {
   return (
     <section className="max-w-prose">
       <h1 className="text-3xl font-semibold tracking-tight">
-        {missing ? `There's no database named ${name}.` : `Dpilot couldn't load ${name}.`}
+        {missing ? `There's no server named ${name}.` : `Dpilot couldn't load ${name}.`}
       </h1>
       {!missing && instance.error instanceof ApiError && (
         <p className="mt-4 text-lg text-slate">{instance.error.message}</p>
       )}
       <Link href="/" className={`${buttonClass.secondary} mt-6`}>
-        Back to databases
+        Back to servers
       </Link>
     </section>
   );
@@ -66,7 +66,7 @@ function InstanceView({ instance }: { instance: InstanceDetail }) {
     <div className="flex flex-col gap-12">
       <header>
         <Link href="/" className={buttonClass.quiet}>
-          Back to databases
+          Back to servers
         </Link>
         <h1 className="mt-4 font-mono text-4xl font-semibold tracking-tight break-all">
           {instance.name}
@@ -205,7 +205,7 @@ function RemoveButton({ instance }: { instance: InstanceDetail }) {
             }
             className={buttonClass.danger}
           >
-            {deleteData ? "Remove and delete data" : "Remove database"}
+            {deleteData ? "Remove and delete data" : "Remove server"}
           </button>
         </div>
       </dialog>
@@ -264,6 +264,15 @@ function ConnectionFacts({
       <Fact term="User" mono action={<CopyButton value={connection.user} label="user" />}>
         {connection.user}
       </Fact>
+      {connection.database && (
+        <Fact
+          term="Database"
+          mono
+          action={<CopyButton value={connection.database} label="database" />}
+        >
+          {connection.database}
+        </Fact>
+      )}
       <Fact
         term="Password"
         mono
@@ -326,7 +335,7 @@ function Compose({ name }: { name: string }) {
   return (
     <Disclosure title="Docker Compose file" open={open} onToggle={setOpen}>
       <p className="mb-3 max-w-prose text-slate">
-        Run this database without Dpilot. It uses the same data volume, so stop it here first.
+        Run this server without Dpilot. It uses the same data volume, so stop it here first.
       </p>
       <pre className="max-h-96 overflow-auto rounded-md bg-white p-4 font-mono text-xs leading-relaxed">
         {data?.yaml ?? (compose.isError ? "Dpilot couldn't build the file." : "Loading…")}

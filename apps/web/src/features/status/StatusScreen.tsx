@@ -48,7 +48,7 @@ function headlineFor(docker: DockerStatus | undefined): {
   if (docker.state === "running") {
     return { tone: "ok", text: "Docker is running. Dpilot is ready for your databases." };
   }
-  return { tone: "down", text: "Dpilot can't reach Docker, so databases can't start yet." };
+  return { tone: "down", text: "Dpilot can't reach Docker, so database servers can't start yet." };
 }
 
 function FixDocker({

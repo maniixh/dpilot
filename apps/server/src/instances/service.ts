@@ -25,6 +25,7 @@ import {
   containerName,
   engineSpec,
   type InstanceIdentity,
+  type InstanceSettings,
   imageRef,
   LABEL,
   volumeName,
@@ -65,8 +66,7 @@ export interface InstanceService {
   settled(name: string): Promise<void>;
 }
 
-interface Job extends InstanceIdentity {
-  password: string;
+interface Job extends InstanceSettings {
   state: InstanceState;
   done: Promise<void>;
 }
@@ -211,6 +211,7 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
       version,
       port,
       password: request.password ?? deps.generatePassword(),
+      database: request.database ?? null,
       state: { status: "creating" },
       done: Promise.resolve(),
     };
@@ -266,8 +267,10 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
 
   async function settingsOf(name: string) {
     const { details, identity } = await findContainer(name);
-    const password = engineSpec(identity.engine).passwordFromEnv(details.env) ?? "";
-    return { details, identity, password };
+    const spec = engineSpec(identity.engine);
+    const password = spec.passwordFromEnv(details.env) ?? "";
+    const database = spec.databaseFromEnv(details.env);
+    return { details, identity, password, database };
   }
 
   return {
@@ -285,20 +288,20 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
       if (job) {
         return {
           ...summaryOf(job, job.state),
-          connection: connectionFor(job.engine, job.port, job.password),
+          connection: connectionFor(job.engine, job.port, job.password, job.database),
           image: imageRef(job.engine, job.version),
           volume: volumeName(job.name),
           containerId: null,
           createdAt: null,
         };
       }
-      const { details, identity, password } = await settingsOf(name);
+      const { details, identity, password, database } = await settingsOf(name);
       return {
         ...summaryOf(
           identity,
           containerState(details.state.status, details.state.health, details.state.exitCode),
         ),
-        connection: connectionFor(identity.engine, identity.port, password),
+        connection: connectionFor(identity.engine, identity.port, password, database),
         image: details.image,
         volume: volumeName(name),
         containerId: details.id,
@@ -348,10 +351,10 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
     },
 
     async compose(name) {
-      const { identity, password } = await settingsOf(name);
+      const { identity, password, database } = await settingsOf(name);
       return {
         fileName: `${containerName(name)}.compose.yml`,
-        yaml: composeYaml({ ...identity, password }),
+        yaml: composeYaml({ ...identity, password, database }),
       };
     },
 

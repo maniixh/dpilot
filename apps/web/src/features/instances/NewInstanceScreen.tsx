@@ -19,6 +19,7 @@ const FIELD_HINTS: Record<Field, string> = {
   name: "Use 2 to 31 lowercase letters, digits or hyphens, starting with a letter.",
   port: "Use a whole number from 1024 to 65535.",
   password: "Use 8 to 128 characters without spaces.",
+  database: "Use lowercase letters, digits and underscores, starting with a letter or underscore.",
 };
 
 export function NewInstanceScreen() {
@@ -29,6 +30,7 @@ export function NewInstanceScreen() {
   const [name, setName] = useState<string | null>(null);
   const [port, setPort] = useState("");
   const [password, setPassword] = useState("");
+  const [database, setDatabase] = useState("");
   const [invalid, setInvalid] = useState<ReadonlySet<Field>>(new Set());
   const versions = useEngineVersions(engine);
 
@@ -44,6 +46,7 @@ export function NewInstanceScreen() {
       name: chosenName,
       port: port.trim() === "" ? undefined : Number(port),
       password: password === "" ? undefined : password,
+      database: database.trim() === "" ? undefined : database.trim(),
     });
     if (!parsed.success) {
       setInvalid(new Set(parsed.error.issues.map((issue) => issue.path[0] as Field)));
@@ -59,9 +62,9 @@ export function NewInstanceScreen() {
     <form onSubmit={submit} noValidate className="flex max-w-2xl flex-col gap-10">
       <div>
         <Link href="/" className={buttonClass.quiet}>
-          Back to databases
+          Back to servers
         </Link>
-        <h1 className="mt-4 text-4xl font-semibold tracking-tight">New database</h1>
+        <h1 className="mt-4 text-4xl font-semibold tracking-tight">New database server</h1>
       </div>
 
       <fieldset>
@@ -116,9 +119,9 @@ export function NewInstanceScreen() {
       </Field>
 
       <Field
-        label="Name"
+        label="Server name"
         invalid={invalid.has("name")}
-        hint="Lowercase letters, digits and hyphens. The Docker container is named dpilot-<name>."
+        hint="Names the server, not a database inside it. The Docker container is named dpilot-<name>."
         error={FIELD_HINTS.name}
       >
         {(id, describedBy) => (
@@ -128,6 +131,27 @@ export function NewInstanceScreen() {
             aria-invalid={invalid.has("name")}
             value={chosenName}
             onChange={(e) => setName(e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            className={`${inputClass} font-mono`}
+          />
+        )}
+      </Field>
+
+      <Field
+        label="First database"
+        invalid={invalid.has("database")}
+        hint="Optional. Dpilot creates this empty database inside the server and connects to it by default."
+        error={FIELD_HINTS.database}
+      >
+        {(id, describedBy) => (
+          <input
+            id={id}
+            aria-describedby={describedBy}
+            aria-invalid={invalid.has("database")}
+            placeholder="None"
+            value={database}
+            onChange={(e) => setDatabase(e.target.value)}
             autoComplete="off"
             spellCheck={false}
             className={`${inputClass} font-mono`}
@@ -190,7 +214,7 @@ export function NewInstanceScreen() {
           disabled={create.isPending || !versions.data}
           className={buttonClass.primary}
         >
-          {create.isPending ? "Creating…" : "Create database"}
+          {create.isPending ? "Creating…" : "Create server"}
         </button>
       </div>
     </form>
@@ -204,7 +228,7 @@ function versionHint(source: "docker-hub" | "fallback" | undefined): string {
   if (source === "fallback") {
     return "Docker Hub couldn't be reached, so this is Dpilot's built-in list.";
   }
-  return "Newest first, from Docker Hub. The image downloads when you create the database.";
+  return "Newest first, from Docker Hub. The image downloads when you create the server.";
 }
 
 function Field({

@@ -36,6 +36,7 @@ function existing(
       version: "8.4",
       port: overrides.port ?? 3306,
       password: "pw",
+      database: null,
     }),
     state: overrides.state ?? "running",
     health: overrides.health === undefined ? "healthy" : overrides.health,
@@ -81,6 +82,7 @@ describe("create", () => {
         version: "17",
         port: 5432,
         password: "generated-pw",
+        database: null,
       }),
     );
     expect(docker.volumes.get("dpilot_shop_data")).toEqual({
@@ -98,6 +100,19 @@ describe("create", () => {
 
     expect(docker.calls).not.toContain("pullImage mysql:8.4");
     expect(docker.containers.get("dpilot-a1")?.spec.Env).toEqual(["MYSQL_ROOT_PASSWORD=my-secret"]);
+  });
+
+  test("creates the requested first database and connects to it", async () => {
+    docker.images.add("postgres:17");
+
+    await service.create({ engine: "postgres", version: "17", name: "shop", database: "orders" });
+    await service.settled("shop");
+
+    expect(docker.containers.get("dpilot-shop")?.spec.Env).toContain("POSTGRES_DB=orders");
+    expect((await service.get("shop")).connection).toMatchObject({
+      database: "orders",
+      url: "postgres://postgres:generated-pw@127.0.0.1:5432/orders",
+    });
   });
 
   test("reports pulling progress while the image downloads", async () => {

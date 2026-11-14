@@ -22,7 +22,14 @@ function setup() {
   const addInstance = (name: string, port = 3306) =>
     ctx.engine.addContainer({
       name: `dpilot-${name}`,
-      spec: buildContainerSpec({ name, engine: "mysql", version: "8.4", port, password: "pw" }),
+      spec: buildContainerSpec({
+        name,
+        engine: "mysql",
+        version: "8.4",
+        port,
+        password: "pw",
+        database: null,
+      }),
       state: "running",
       health: "healthy",
       exitCode: 0,

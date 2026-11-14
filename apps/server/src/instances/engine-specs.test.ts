@@ -29,7 +29,7 @@ describe("naming", () => {
 describe("engineSpec", () => {
   test("mysql uses MYSQL_ROOT_PASSWORD and a TCP mysqladmin ping", () => {
     const spec = engineSpec("mysql");
-    expect(spec.env("pw")).toEqual(["MYSQL_ROOT_PASSWORD=pw"]);
+    expect(spec.env({ password: "pw", database: null })).toEqual(["MYSQL_ROOT_PASSWORD=pw"]);
     expect(spec.passwordFromEnv({ MYSQL_ROOT_PASSWORD: "pw" })).toBe("pw");
     expect(spec.healthcheck.join(" ")).toContain("mysqladmin ping -h 127.0.0.1");
     expect(spec.dataPath("8.4")).toBe("/var/lib/mysql");
@@ -37,7 +37,7 @@ describe("engineSpec", () => {
 
   test("mariadb uses its bundled healthcheck script", () => {
     const spec = engineSpec("mariadb");
-    expect(spec.env("pw")).toEqual(["MARIADB_ROOT_PASSWORD=pw"]);
+    expect(spec.env({ password: "pw", database: null })).toEqual(["MARIADB_ROOT_PASSWORD=pw"]);
     expect(spec.healthcheck).toEqual([
       "CMD",
       "healthcheck.sh",
@@ -58,21 +58,46 @@ describe("engineSpec", () => {
 
   test("postgres checks readiness over TCP", () => {
     const spec = engineSpec("postgres");
-    expect(spec.env("pw")).toEqual(["POSTGRES_USER=postgres", "POSTGRES_PASSWORD=pw"]);
+    expect(spec.env({ password: "pw", database: null })).toEqual([
+      "POSTGRES_USER=postgres",
+      "POSTGRES_PASSWORD=pw",
+    ]);
     expect(spec.healthcheck).toEqual(["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1"]);
+  });
+
+  test.each([
+    ["mysql", "MYSQL_DATABASE"],
+    ["mariadb", "MARIADB_DATABASE"],
+    ["postgres", "POSTGRES_DB"],
+  ] as const)("%s creates the first database through %s and reads it back", (engine, key) => {
+    const spec = engineSpec(engine);
+    expect(spec.env({ password: "pw", database: "app" })).toContain(`${key}=app`);
+    expect(spec.databaseFromEnv({ [key]: "app" })).toBe("app");
+    expect(spec.databaseFromEnv({})).toBeNull();
   });
 });
 
 describe("connectionFor", () => {
   test("builds an encoded URL bound to localhost", () => {
-    expect(connectionFor("postgres", 5433, "p@ss/word")).toEqual({
+    expect(connectionFor("postgres", 5433, "p@ss/word", null)).toEqual({
       host: "127.0.0.1",
       port: 5433,
       user: "postgres",
       password: "p@ss/word",
+      database: null,
       url: "postgres://postgres:p%40ss%2Fword@127.0.0.1:5433/postgres",
     });
-    expect(connectionFor("mariadb", 3306, "pw").url).toBe("mysql://root:pw@127.0.0.1:3306");
+    expect(connectionFor("mariadb", 3306, "pw", null).url).toBe("mysql://root:pw@127.0.0.1:3306");
+  });
+
+  test("points the URL at the first database when there is one", () => {
+    expect(connectionFor("postgres", 5432, "pw", "app")).toMatchObject({
+      database: "app",
+      url: "postgres://postgres:pw@127.0.0.1:5432/app",
+    });
+    expect(connectionFor("mysql", 3306, "pw", "app").url).toBe(
+      "mysql://root:pw@127.0.0.1:3306/app",
+    );
   });
 });
 
@@ -84,6 +109,7 @@ describe("buildContainerSpec", () => {
       version: "17",
       port: 5433,
       password: "pw",
+      database: null,
     });
 
     expect(spec.Image).toBe("postgres:17");
@@ -108,6 +134,7 @@ describe("composeYaml", () => {
     version: "8.4",
     port: 3307,
     password: 'p$w"d',
+    database: "app",
   });
 
   test("describes the same container, port, volume and healthcheck", () => {
@@ -117,6 +144,7 @@ describe("composeYaml", () => {
     expect(yaml).toContain('- "data:/var/lib/mysql"');
     expect(yaml).toContain('name: "dpilot_shop_data"');
     expect(yaml).toContain("healthcheck:");
+    expect(yaml).toContain('MYSQL_DATABASE: "app"');
   });
 
   test("escapes $ for compose interpolation and quotes values", () => {

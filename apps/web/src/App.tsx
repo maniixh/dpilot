@@ -46,8 +46,8 @@ export function App() {
           <>
             {view === "app-docker-lost" && (
               <p role="alert" className="mb-10 border-l-2 border-down pl-4">
-                Dpilot lost contact with Docker. Your databases may have stopped. Dpilot checks
-                again every 10 seconds.
+                Dpilot lost contact with Docker. Your database servers may have stopped. Dpilot
+                checks again every 10 seconds.
               </p>
             )}
             <Switch>
@@ -63,7 +63,7 @@ export function App() {
               <Route>
                 <Message title="There's nothing at this address.">
                   <Link href="/" className="underline underline-offset-4">
-                    Go to your databases
+                    Go to your servers
                   </Link>
                 </Message>
               </Route>

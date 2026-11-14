@@ -58,6 +58,20 @@ describe("createInstanceRequestSchema", () => {
     expect(createInstanceRequestSchema.parse(req)).toEqual(req);
   });
 
+  test.each(["app", "test_dpilot", "_scratch", "a".repeat(63)])(
+    "accepts database %p",
+    (database) => {
+      expect(createInstanceRequestSchema.safeParse({ ...base, database }).success).toBe(true);
+    },
+  );
+
+  test.each(["", "test-dpilot", "App", "1db", "a".repeat(64), "x;drop", "db name"])(
+    "rejects database %p",
+    (database) => {
+      expect(createInstanceRequestSchema.safeParse({ ...base, database }).success).toBe(false);
+    },
+  );
+
   test.each([
     { ...base, engine: "oracle" },
     { ...base, port: 80 },

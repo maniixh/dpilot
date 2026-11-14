@@ -19,14 +19,19 @@ export interface InstanceIdentity {
   port: number;
 }
 
-export interface InstanceSettings extends InstanceIdentity {
+export interface InstanceSecrets {
   password: string;
+  /** Created on first start; null when the server starts with only its built-in databases. */
+  database: string | null;
 }
+
+export interface InstanceSettings extends InstanceIdentity, InstanceSecrets {}
 
 export interface EngineDockerSpec {
   containerPort: number;
-  env(password: string): string[];
+  env(secrets: InstanceSecrets): string[];
   passwordFromEnv(env: Record<string, string>): string | null;
+  databaseFromEnv(env: Record<string, string>): string | null;
   /** Docker HEALTHCHECK test; checks over TCP so the init-time server does not count as ready. */
   healthcheck: string[];
   dataPath(version: string): string;
@@ -35,8 +40,12 @@ export interface EngineDockerSpec {
 const SPECS: Record<EngineId, EngineDockerSpec> = {
   mysql: {
     containerPort: 3306,
-    env: (password) => [`MYSQL_ROOT_PASSWORD=${password}`],
+    env: ({ password, database }) => [
+      `MYSQL_ROOT_PASSWORD=${password}`,
+      ...(database ? [`MYSQL_DATABASE=${database}`] : []),
+    ],
     passwordFromEnv: (env) => env.MYSQL_ROOT_PASSWORD ?? null,
+    databaseFromEnv: (env) => env.MYSQL_DATABASE ?? null,
     healthcheck: [
       "CMD-SHELL",
       'mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" --silent',
@@ -45,15 +54,24 @@ const SPECS: Record<EngineId, EngineDockerSpec> = {
   },
   mariadb: {
     containerPort: 3306,
-    env: (password) => [`MARIADB_ROOT_PASSWORD=${password}`],
+    env: ({ password, database }) => [
+      `MARIADB_ROOT_PASSWORD=${password}`,
+      ...(database ? [`MARIADB_DATABASE=${database}`] : []),
+    ],
     passwordFromEnv: (env) => env.MARIADB_ROOT_PASSWORD ?? null,
+    databaseFromEnv: (env) => env.MARIADB_DATABASE ?? null,
     healthcheck: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"],
     dataPath: () => "/var/lib/mysql",
   },
   postgres: {
     containerPort: 5432,
-    env: (password) => ["POSTGRES_USER=postgres", `POSTGRES_PASSWORD=${password}`],
+    env: ({ password, database }) => [
+      "POSTGRES_USER=postgres",
+      `POSTGRES_PASSWORD=${password}`,
+      ...(database ? [`POSTGRES_DB=${database}`] : []),
+    ],
     passwordFromEnv: (env) => env.POSTGRES_PASSWORD ?? null,
+    databaseFromEnv: (env) => env.POSTGRES_DB ?? null,
     healthcheck: ["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1"],
     // The postgres 18+ images moved PGDATA under a versioned directory below /var/lib/postgresql.
     dataPath: (version) => {
@@ -103,14 +121,16 @@ export function connectionFor(
   engine: EngineId,
   port: number,
   password: string,
+  database: string | null,
 ): InstanceConnection {
   const user = getEngine(engine).defaultUser;
   const auth = `${encodeURIComponent(user)}:${encodeURIComponent(password)}`;
+  const server = `${auth}@${BIND_HOST}:${port}`;
   const url =
     engine === "postgres"
-      ? `postgres://${auth}@${BIND_HOST}:${port}/postgres`
-      : `mysql://${auth}@${BIND_HOST}:${port}`;
-  return { host: BIND_HOST, port, user, password, url };
+      ? `postgres://${server}/${database ?? "postgres"}`
+      : `mysql://${server}${database ? `/${database}` : ""}`;
+  return { host: BIND_HOST, port, user, password, database, url };
 }
 
 export function buildContainerSpec(settings: InstanceSettings): ContainerCreateSpec {
@@ -118,7 +138,7 @@ export function buildContainerSpec(settings: InstanceSettings): ContainerCreateS
   const portKey = `${spec.containerPort}/tcp`;
   return {
     Image: imageRef(settings.engine, settings.version),
-    Env: spec.env(settings.password),
+    Env: spec.env(settings),
     Labels: labelsFor(settings),
     ExposedPorts: { [portKey]: {} },
     Healthcheck: { Test: spec.healthcheck, ...HEALTHCHECK_TIMING },

@@ -13,6 +13,14 @@ export const instancePasswordSchema = z
   .max(128)
   .regex(/^[\x21-\x7e]+$/, "Use printable ASCII without spaces");
 
+/**
+ * A name every engine accepts unquoted: Postgres folds unquoted names to lowercase
+ * and caps them at 63 bytes, and neither engine allows a hyphen without quoting.
+ */
+export const databaseNameSchema = z
+  .string()
+  .regex(/^[a-z_][a-z0-9_]{0,62}$/, "Use lowercase letters, digits and underscores");
+
 export const createInstanceRequestSchema = z
   .object({
     engine: engineIdSchema,
@@ -20,6 +28,8 @@ export const createInstanceRequestSchema = z
     name: instanceNameSchema,
     port: z.number().int().min(1024).max(65535).optional(),
     password: instancePasswordSchema.optional(),
+    /** Created inside the server on first start. */
+    database: databaseNameSchema.optional(),
   })
   .strict();
 
@@ -60,6 +70,8 @@ export interface InstanceConnection {
   port: number;
   user: string;
   password: string;
+  /** The first database, when one was created; clients connect to it by default. */
+  database: string | null;
   url: string;
 }
 

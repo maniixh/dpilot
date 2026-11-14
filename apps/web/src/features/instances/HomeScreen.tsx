@@ -2,7 +2,7 @@ import type { DockerStatus, HealthResponse } from "@dpilot/shared";
 import { SystemFacts } from "../status/StatusScreen.tsx";
 import { InstanceList } from "./InstanceList.tsx";
 
-/** The databases, then the machine they run on. */
+/** The database servers, then the machine they run on. */
 export function HomeScreen({
   health,
   docker,

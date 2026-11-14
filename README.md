@@ -12,13 +12,16 @@ containers (MySQL, MariaDB, PostgreSQL and more) and work with their schemas and
 ## What you can do
 
 - Pick an engine and a version (listed from Docker Hub, with a built-in fallback) and create a
-  database. Dpilot downloads the image, creates a data volume and starts the container, and
-  shows progress until the server accepts connections.
-- Copy the host, port, user, password or a connection URL.
-- Start, stop, restart or remove a database. Removing keeps its data volume unless you choose
-  to delete it.
+  database server. Dpilot downloads the image, creates a data volume and starts the container,
+  and shows progress until the server accepts connections.
+- Optionally name a first database, which the server creates on first start. Database names use
+  lowercase letters, digits and underscores. The engine's own system databases, such as
+  `postgres` or `mysql`, are always there too.
+- Copy the host, port, user, password, database or a connection URL.
+- Start, stop, restart or remove a server. Removing keeps its data volume unless you choose to
+  delete it.
 - Watch CPU and memory use, and read the latest log lines.
-- Download a Docker Compose file that runs the same database without Dpilot.
+- Download a Docker Compose file that runs the same server without Dpilot.
 
 Dpilot names its containers `dpilot-<name>` and volumes `dpilot_<name>_data`, and labels them
 `dpilot.managed=true`. It only lists and changes containers with that label.
@@ -37,7 +40,8 @@ bun run dev
 
 `bun run dev` starts the API server on port 7311 (restarts on change) and the Vite dev server on
 port 5173, and prints a sign-in link. Open that link. In dev mode the token is stored in
-`apps/server/.dev-token`, so the link keeps working across server restarts.
+`apps/server/.dev-token`, so the link keeps working across server restarts. Press Ctrl+C to stop
+both servers.
 
 | Command             | What it does                                                         |
 | ------------------- | -------------------------------------------------------------------- |

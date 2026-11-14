@@ -19,7 +19,7 @@ function seconds(ns: number): string {
 /** docker-compose.yml that recreates the instance on the same named volume. */
 export function composeYaml(settings: InstanceSettings): string {
   const spec = engineSpec(settings.engine);
-  const env = spec.env(settings.password).map((entry) => {
+  const env = spec.env(settings).map((entry) => {
     const eq = entry.indexOf("=");
     return `      ${entry.slice(0, eq)}: ${q(entry.slice(eq + 1))}`;
   });
