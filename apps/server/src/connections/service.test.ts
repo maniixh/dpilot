@@ -141,6 +141,16 @@ test("creates a new key when none exists and marks old passwords lost", async ()
   expect((await later.resolve(other.id)).password).toBe("x");
 });
 
+test("concurrent password saves without a key keep both passwords", async () => {
+  const [a, b] = await Promise.all([
+    svc.create({ ...input, label: "A", password: "pa" }),
+    svc.create({ ...input, label: "B", password: "pb" }),
+  ]);
+  expect(keys.creates).toBe(1);
+  expect((await svc.resolve(a.id)).password).toBe("pa");
+  expect((await svc.resolve(b.id)).password).toBe("pb");
+});
+
 test("re-entering a lost password clears the flag", async () => {
   const { id } = await svc.create({ ...input, password: "s3cret" });
   const later = service(new MemoryKeyStore());

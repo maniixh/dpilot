@@ -1,7 +1,7 @@
 import { getEngine, type ObjectGroups } from "@dpilot/shared";
 import { useObjects, useSchemas } from "../../api/explorer.ts";
 import { targetHref } from "./paths.ts";
-import { ErrorLine, OverviewHeader, useTargetSummary } from "./ServerOverview.tsx";
+import { ErrorLine, OverviewHeader, useTarget } from "./ServerOverview.tsx";
 
 const GROUPS = [
   { key: "tables", label: "Tables", empty: "No tables." },
@@ -14,9 +14,9 @@ const GROUP_HEADING =
   "flex items-baseline justify-between border-b border-rule pb-2 text-lg font-semibold";
 
 export function DatabaseOverview({ target, db }: { target: string; db: string }) {
-  const summary = useTargetSummary(target);
+  const state = useTarget(target);
+  const summary = state.status === "found" ? state.summary : undefined;
   const label = summary?.label ?? target;
-  const postgres = summary?.engine === "postgres";
 
   return (
     <div className="flex flex-col gap-12">
@@ -25,9 +25,19 @@ export function DatabaseOverview({ target, db }: { target: string; db: string })
         subline={summary === undefined ? label : `${getEngine(summary.engine).label} on ${label}`}
         back={{ href: targetHref(target), label: `Back to ${label}` }}
       />
-      {summary === undefined ? (
+      {state.status === "loading" ? (
         <p className="text-slate">Loading…</p>
-      ) : postgres ? (
+      ) : state.status === "error" ? (
+        <ErrorLine error={state.error} onRetry={state.retry} />
+      ) : state.status === "unavailable" ? (
+        <p role="alert" className="border-l-2 border-down pl-4">
+          {state.message}
+        </p>
+      ) : state.status === "missing" ? (
+        <p role="alert" className="border-l-2 border-down pl-4">
+          Dpilot doesn't know this server. It may have been removed.
+        </p>
+      ) : state.summary.engine === "postgres" ? (
         <Schemas target={target} db={db} />
       ) : (
         <Objects target={target} db={db} schema={null} />

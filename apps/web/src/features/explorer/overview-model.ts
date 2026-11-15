@@ -1,4 +1,4 @@
-import type { ServerVariable } from "@dpilot/shared";
+import type { ServerVariable, TargetSummary, TargetsResponse } from "@dpilot/shared";
 
 const UNITS = [
   { name: "day", seconds: 86_400 },
@@ -25,6 +25,22 @@ export function formatUptime(seconds: number | null): string {
     if (minorCount > 0) parts.push(plural(minorCount, minor.name));
   }
   return parts.join(" ");
+}
+
+export type TargetLookup =
+  | { status: "found"; summary: TargetSummary }
+  | { status: "missing" }
+  | { status: "unavailable"; message: string };
+
+/** Finds a target in the sidebar list. Dpilot servers can't be listed while Docker is down. */
+export function findTarget(data: TargetsResponse, target: string): TargetLookup {
+  const servers = data.servers.status === "ok" ? data.servers.targets : [];
+  const summary = [...servers, ...data.connections].find((t) => t.id === target);
+  if (summary !== undefined) return { status: "found", summary };
+  if (data.servers.status === "unavailable" && target.startsWith("s.")) {
+    return { status: "unavailable", message: data.servers.message };
+  }
+  return { status: "missing" };
 }
 
 export function filterVariables(vars: readonly ServerVariable[], query: string): ServerVariable[] {

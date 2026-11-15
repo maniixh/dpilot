@@ -5,15 +5,24 @@ import { useServerInfo, useTargets, useVariables } from "../../api/explorer.ts";
 import { buttonClass } from "../../ui/button.ts";
 import { Fact, Facts } from "../../ui/Facts.tsx";
 import { inputClass } from "../../ui/form.tsx";
-import { filterVariables, formatUptime } from "./overview-model.ts";
+import { filterVariables, findTarget, formatUptime, type TargetLookup } from "./overview-model.ts";
 import { errorText } from "./Sidebar.tsx";
 
+export type TargetState =
+  | TargetLookup
+  | { status: "loading" }
+  | { status: "error"; error: Error; retry: () => void };
+
 /** The target's summary from the sidebar list, so headings show the label rather than the id. */
-export function useTargetSummary(target: string): TargetSummary | undefined {
-  const data = useTargets().data;
-  if (data === undefined) return undefined;
-  const servers = data.servers.status === "ok" ? data.servers.targets : [];
-  return [...servers, ...data.connections].find((t) => t.id === target);
+export function useTarget(target: string): TargetState {
+  const targets = useTargets();
+  if (targets.data !== undefined) return findTarget(targets.data, target);
+  if (targets.isPending) return { status: "loading" };
+  return { status: "error", error: targets.error, retry: () => void targets.refetch() };
+}
+
+function summaryOf(state: TargetState): TargetSummary | undefined {
+  return state.status === "found" ? state.summary : undefined;
 }
 
 export function ErrorLine({ error, onRetry }: { error: Error | null; onRetry: () => void }) {
@@ -53,7 +62,7 @@ export function OverviewHeader({
 }
 
 export function ServerOverview({ target }: { target: string }) {
-  const summary = useTargetSummary(target);
+  const summary = summaryOf(useTarget(target));
   const info = useServerInfo(target);
   const engine = info.data?.engine ?? summary?.engine;
 

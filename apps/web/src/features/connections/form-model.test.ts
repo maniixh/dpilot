@@ -114,6 +114,17 @@ describe("form model", () => {
     expect(needsPassword({ ...fromSaved(open), host: "127.0.0.2" }, open)).toBe(false);
   });
 
+  test("removing the saved password sends null and needs no new one", () => {
+    const values = { ...fromSaved(saved), host: "127.0.0.2", clearPassword: true };
+    expect(toPatch(values, saved)).toEqual({ host: "127.0.0.2", password: null });
+    expect(needsPassword(values, saved)).toBe(false);
+  });
+
+  test("a typed password wins over removing it", () => {
+    const values = { ...fromSaved(saved), password: "new", clearPassword: true };
+    expect(toPatch(values, saved)).toEqual({ password: "new" });
+  });
+
   test("invalidFields is empty for a valid form", () => {
     expect(invalidFields({ ...emptyForm("mysql"), label: "Local" }, null).size).toBe(0);
     expect(invalidFields(fromSaved(saved), saved).size).toBe(0);

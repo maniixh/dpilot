@@ -21,6 +21,8 @@ export interface FormValues {
   database: string;
   tlsMode: TlsMode;
   ca: string;
+  /** Editing only: remove the saved password instead of keeping it. */
+  clearPassword: boolean;
 }
 
 export function emptyForm(engine: EngineId): FormValues {
@@ -35,6 +37,7 @@ export function emptyForm(engine: EngineId): FormValues {
     database: "",
     tlsMode: "off",
     ca: "",
+    clearPassword: false,
   };
 }
 
@@ -49,6 +52,7 @@ export function fromSaved(saved: SavedConnection): FormValues {
     database: saved.database ?? "",
     tlsMode: saved.tls.mode,
     ca: saved.tls.ca ?? "",
+    clearPassword: false,
   };
 }
 
@@ -101,6 +105,7 @@ export function toPatch(values: FormValues, saved: SavedConnection): ConnectionP
   if (input.port !== saved.port) patch.port = input.port;
   if (input.username !== saved.username) patch.username = input.username;
   if (input.password !== null) patch.password = input.password;
+  else if (values.clearPassword && (saved.hasPassword || saved.passwordLost)) patch.password = null;
   if (input.database !== saved.database) patch.database = input.database;
   if (input.tls.mode !== saved.tls.mode || input.tls.ca !== saved.tls.ca) patch.tls = input.tls;
   return patch;
@@ -108,7 +113,8 @@ export function toPatch(values: FormValues, saved: SavedConnection): ConnectionP
 
 /** Mirrors the server: a saved password isn't sent to a different server. */
 export function needsPassword(values: FormValues, saved: SavedConnection): boolean {
-  if (values.password !== "" || !(saved.hasPassword || saved.passwordLost)) return false;
+  if (values.password !== "" || values.clearPassword) return false;
+  if (!(saved.hasPassword || saved.passwordLost)) return false;
   return (
     values.engine !== saved.engine ||
     values.host.trim() !== saved.host ||

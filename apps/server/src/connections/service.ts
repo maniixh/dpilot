@@ -96,7 +96,15 @@ export function createConnectionService(deps: ConnectionServiceDeps): Connection
   }
 
   /** Encrypts a password, creating the key on first use. Never replaces an existing key file. */
-  async function seal(password: string): Promise<Sealed> {
+  let sealing: Promise<unknown> = Promise.resolve();
+  function seal(password: string): Promise<Sealed> {
+    // One at a time: a key created by one call must not have its cleanup wipe another's password.
+    const next = sealing.then(() => sealNow(password));
+    sealing = next.catch(() => undefined);
+    return next;
+  }
+
+  async function sealNow(password: string): Promise<Sealed> {
     const state = await keyState();
     if (state.kind === "mismatch") throw new ConnectionError("key_mismatch", MISMATCH_MESSAGE);
     if (state.kind === "usable") {

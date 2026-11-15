@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { ServerVariable } from "@dpilot/shared";
-import { filterVariables, formatUptime } from "./overview-model.ts";
+import type { ServerVariable, TargetSummary, TargetsResponse } from "@dpilot/shared";
+import { filterVariables, findTarget, formatUptime } from "./overview-model.ts";
 
 describe("formatUptime", () => {
   test("unknown uptime reads as a dash", () => expect(formatUptime(null)).toBe("—"));
@@ -9,6 +9,50 @@ describe("formatUptime", () => {
   test("12 minutes", () => expect(formatUptime(720)).toBe("12 minutes"));
   test("3 hours 4 minutes", () => expect(formatUptime(11040)).toBe("3 hours 4 minutes"));
   test("2 days 5 hours", () => expect(formatUptime(190800)).toBe("2 days 5 hours"));
+});
+
+describe("findTarget", () => {
+  const mysql: TargetSummary = {
+    id: "s.one",
+    kind: "server",
+    label: "one",
+    engine: "mysql",
+    available: true,
+  };
+  const saved: TargetSummary = {
+    id: "c.00000000-0000-4000-8000-000000000001",
+    kind: "connection",
+    label: "Prod",
+    engine: "postgres",
+    available: true,
+  };
+  const ok: TargetsResponse = {
+    servers: { status: "ok", targets: [mysql] },
+    connections: [saved],
+  };
+  const down: TargetsResponse = {
+    servers: { status: "unavailable", message: "Docker isn't running." },
+    connections: [saved],
+  };
+
+  test("finds Dpilot servers and saved connections", () => {
+    expect(findTarget(ok, "s.one")).toEqual({ status: "found", summary: mysql });
+    expect(findTarget(down, saved.id)).toEqual({ status: "found", summary: saved });
+  });
+
+  test("reports an unknown target as missing", () => {
+    expect(findTarget(ok, "s.gone")).toEqual({ status: "missing" });
+    expect(findTarget(ok, "c.00000000-0000-4000-8000-000000000009")).toEqual({
+      status: "missing",
+    });
+  });
+
+  test("reports a Dpilot server as unavailable while Docker is", () => {
+    expect(findTarget(down, "s.one")).toEqual({
+      status: "unavailable",
+      message: "Docker isn't running.",
+    });
+  });
 });
 
 describe("filterVariables", () => {

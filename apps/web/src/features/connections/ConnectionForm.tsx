@@ -111,7 +111,9 @@ export function ConnectionForm({
     </Field>
   );
 
-  const showPasswordNote = passwordNeeded || saved?.passwordLost === true;
+  const showPasswordNote =
+    passwordNeeded || (saved?.passwordLost === true && !values.clearPassword);
+  const canClearPassword = saved !== null && (saved.hasPassword || saved.passwordLost);
 
   return (
     <form onSubmit={submit} noValidate className="flex max-w-2xl flex-col gap-10">
@@ -145,6 +147,17 @@ export function ConnectionForm({
             autoComplete: "new-password",
             placeholder: saved?.hasPassword === true ? "Saved. Leave empty to keep it." : "None",
           },
+        )}
+        {canClearPassword && (
+          <label className="flex items-center gap-3 sm:col-start-2 sm:-mt-6">
+            <input
+              type="checkbox"
+              checked={values.clearPassword}
+              onChange={(e) => update({ clearPassword: e.target.checked })}
+              className="size-4 accent-ink"
+            />
+            Remove the saved password
+          </label>
         )}
       </div>
 
