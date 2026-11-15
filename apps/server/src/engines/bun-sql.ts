@@ -1,6 +1,6 @@
 import { SQL } from "bun";
 import type { ConnectionConfig } from "../connections/types.ts";
-import type { SqlClientFactory, SqlTransaction } from "./types.ts";
+import type { SqlClientFactory, SqlResult, SqlTransaction } from "./types.ts";
 
 type TlsOption = "disable" | "require" | "verify-full" | { ca: string };
 
@@ -24,10 +24,14 @@ function databaseOption(config: ConnectionConfig, database: string | null): stri
   return config.engine === "postgres" ? null : "information_schema";
 }
 
-/** Small pools: the explorer runs a handful of catalog queries at a time. */
-export const bunSqlFactory: SqlClientFactory = (config, database) => {
+/** Connection options shared by every client Dpilot opens; `max` sizes the pool. */
+export function sqlOptions(
+  config: ConnectionConfig,
+  database: string | null,
+  max: number,
+): SQL.Options {
   const selected = databaseOption(config, database);
-  const sql = new SQL({
+  return {
     adapter: config.engine,
     hostname: config.host,
     port: config.port,
@@ -38,11 +42,16 @@ export const bunSqlFactory: SqlClientFactory = (config, database) => {
     // Without TLS, MySQL 8's caching_sha2_password needs the server's RSA key to finish
     // authenticating any user whose password it hasn't cached yet.
     allowPublicKeyRetrieval: config.tls.mode === "off",
-    max: 4,
+    max,
     idleTimeout: 60,
     connectionTimeout: 10,
     bigint: true,
-  });
+  };
+}
+
+/** Small pools: the explorer runs a handful of catalog queries at a time. */
+export const bunSqlFactory: SqlClientFactory = (config, database) => {
+  const sql = new SQL(sqlOptions(config, database, 4));
   return {
     ...statements(sql),
     async transaction(fn) {
@@ -64,6 +73,19 @@ interface ValuesResult {
   affectedRows?: number | null;
 }
 
+/** Maps the result of `.values()` to a SqlResult. */
+export function toSqlResult(result: unknown): SqlResult {
+  const meta: ValuesResult = (
+    typeof result === "object" && result !== null ? result : {}
+  ) as ValuesResult;
+  return {
+    columns: (meta.columns ?? []).map((column) => column.name),
+    rows: Array.isArray(result) ? (result as unknown[][]) : [],
+    command: meta.command ?? null,
+    affected: typeof meta.affectedRows === "number" ? meta.affectedRows : null,
+  };
+}
+
 function statements(runner: Runner): SqlTransaction {
   return {
     async query(text, params = []) {
@@ -72,16 +94,7 @@ function statements(runner: Runner): SqlTransaction {
     },
     async execute(text, params = []) {
       const query = runner.unsafe(text, [...params]) as { values(): Promise<unknown> };
-      const result = await query.values();
-      const meta: ValuesResult = (
-        typeof result === "object" && result !== null ? result : {}
-      ) as ValuesResult;
-      return {
-        columns: (meta.columns ?? []).map((column) => column.name),
-        rows: Array.isArray(result) ? (result as unknown[][]) : [],
-        command: meta.command ?? null,
-        affected: typeof meta.affectedRows === "number" ? meta.affectedRows : null,
-      };
+      return toSqlResult(await query.values());
     },
   };
 }
