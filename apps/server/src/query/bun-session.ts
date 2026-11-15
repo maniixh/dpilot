@@ -6,7 +6,6 @@ import type { SqlSession, SqlSessionFactory } from "./types.ts";
 
 interface PendingQuery {
   values(): Promise<unknown>;
-  cancel(): void;
 }
 
 interface Reserved {
@@ -14,54 +13,66 @@ interface Reserved {
   release(): void;
 }
 
-/** MySQL ignores `query.cancel()`, so the statement is killed from a second connection. */
-async function killMysqlQuery(config: ConnectionConfig, connectionId: number): Promise<void> {
-  if (!Number.isSafeInteger(connectionId)) throw new Error("Invalid connection id.");
-  const killer = new SQL(sqlOptions(config, null, 1));
+/**
+ * Cancels from a second connection: MySQL ignores `query.cancel()`, and Postgres' version
+ * returns before the server has acted. Resolves once the server has taken the signal.
+ */
+async function cancelFromSecondConnection(
+  config: ConnectionConfig,
+  backendId: number,
+): Promise<void> {
+  if (!Number.isSafeInteger(backendId)) throw new Error("Invalid connection id.");
+  const canceller = new SQL(sqlOptions(config, null, 1));
   try {
-    // KILL takes no bound parameter; the text is built from a verified integer.
-    await killer.unsafe(`KILL QUERY ${connectionId}`);
+    if (config.engine === "postgres") {
+      await canceller.unsafe("SELECT pg_cancel_backend($1)", [backendId]);
+    } else {
+      // KILL takes no bound parameter; the text is built from a verified integer.
+      await canceller.unsafe(`KILL QUERY ${backendId}`);
+    }
   } finally {
-    await killer.close();
+    await canceller.close();
   }
 }
 
-async function mysqlConnectionId(reserved: Reserved): Promise<number> {
-  const result = toSqlResult(await reserved.unsafe("SELECT CONNECTION_ID()").values());
+async function backendId(config: ConnectionConfig, reserved: Reserved): Promise<number> {
+  const text = config.engine === "postgres" ? "SELECT pg_backend_pid()" : "SELECT CONNECTION_ID()";
+  const result = toSqlResult(await reserved.unsafe(text).values());
   return Number(result.rows[0]?.[0]);
 }
 
 class BunSession implements SqlSession {
-  private inFlight: PendingQuery | null = null;
+  private running = false;
+  private pendingCancel: Promise<void> | null = null;
 
   constructor(
     private readonly config: ConnectionConfig,
     private readonly sql: SQL,
     private readonly reserved: Reserved,
-    private readonly connectionId: number | null,
+    private readonly backendId: number,
   ) {}
 
   async execute(text: string): Promise<SqlResult> {
+    // A cancel signal still travelling could otherwise hit this statement.
+    if (this.pendingCancel !== null) await this.pendingCancel.catch(() => undefined);
     const query = this.reserved.unsafe(text);
-    this.inFlight = query;
+    this.running = true;
     try {
       return toSqlResult(await query.values());
     } finally {
-      this.inFlight = null;
+      this.running = false;
     }
   }
 
-  async cancel(): Promise<void> {
-    const query = this.inFlight;
-    if (query === null) return;
-    if (this.connectionId === null) {
-      query.cancel();
-      return;
-    }
-    await killMysqlQuery(this.config, this.connectionId);
+  cancel(): Promise<void> {
+    if (!this.running) return Promise.resolve();
+    const settled = cancelFromSecondConnection(this.config, this.backendId);
+    this.pendingCancel = settled;
+    return settled;
   }
 
   async close(): Promise<void> {
+    if (this.pendingCancel !== null) await this.pendingCancel.catch(() => undefined);
     this.reserved.release();
     await this.sql.close();
   }
@@ -72,8 +83,7 @@ export const bunSessionFactory: SqlSessionFactory = async (config, database) => 
   const sql = new SQL(sqlOptions(config, database, 1));
   try {
     const reserved = (await sql.reserve()) as unknown as Reserved;
-    const connectionId = config.engine === "postgres" ? null : await mysqlConnectionId(reserved);
-    return new BunSession(config, sql, reserved, connectionId);
+    return new BunSession(config, sql, reserved, await backendId(config, reserved));
   } catch (error) {
     await sql.close();
     throw error;
