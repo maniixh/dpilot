@@ -19,6 +19,7 @@ const saved: SavedConnection = {
   username: "app",
   database: "app",
   tls: { mode: "require", ca: null },
+  readOnly: false,
   hasPassword: true,
   passwordLost: false,
   createdAt: "2026-11-15T00:00:00.000Z",

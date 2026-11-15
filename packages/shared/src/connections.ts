@@ -35,6 +35,7 @@ const connectionFields = {
   password: z.string().max(1024).nullable().optional(),
   database: z.string().min(1).max(128).nullable().optional(),
   tls: tlsSettingsSchema,
+  readOnly: z.boolean().optional(),
 };
 
 export const connectionInputSchema = z.object(connectionFields).strict();
@@ -58,6 +59,7 @@ export interface SavedConnection {
   username: string;
   database: string | null;
   tls: TlsSettings;
+  readOnly: boolean;
   hasPassword: boolean;
   /** A password was saved but Dpilot can no longer read it. */
   passwordLost: boolean;

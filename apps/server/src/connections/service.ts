@@ -146,6 +146,7 @@ export function createConnectionService(deps: ConnectionServiceDeps): Connection
       username: row.username,
       database: row.database,
       tls: { mode: row.tls_mode, ca: row.tls_ca },
+      readOnly: false,
       hasPassword,
       passwordLost: row.password_lost === 1 || (hasPassword && !usable),
       createdAt: row.created_at,
