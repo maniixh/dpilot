@@ -1,6 +1,6 @@
 import { SQL } from "bun";
 import type { ConnectionConfig } from "../connections/types.ts";
-import type { SqlClientFactory } from "./types.ts";
+import type { SqlClientFactory, SqlTransaction } from "./types.ts";
 
 type TlsOption = "disable" | "require" | "verify-full" | { ca: string };
 
@@ -38,17 +38,50 @@ export const bunSqlFactory: SqlClientFactory = (config, database) => {
     // Without TLS, MySQL 8's caching_sha2_password needs the server's RSA key to finish
     // authenticating any user whose password it hasn't cached yet.
     allowPublicKeyRetrieval: config.tls.mode === "off",
-    max: 2,
+    max: 4,
     idleTimeout: 60,
     connectionTimeout: 10,
+    bigint: true,
   });
   return {
-    async query(text, params = []) {
-      const rows: unknown = await sql.unsafe(text, [...params]);
-      return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+    ...statements(sql),
+    async transaction(fn) {
+      return sql.begin(async (tx) => fn(statements(tx)));
     },
     async close() {
       await sql.close();
     },
   };
 };
+
+interface Runner {
+  unsafe(text: string, params?: unknown[]): unknown;
+}
+
+interface ValuesResult {
+  columns?: readonly { name: string }[];
+  command?: string | null;
+  affectedRows?: number | null;
+}
+
+function statements(runner: Runner): SqlTransaction {
+  return {
+    async query(text, params = []) {
+      const rows: unknown = await runner.unsafe(text, [...params]);
+      return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+    },
+    async execute(text, params = []) {
+      const query = runner.unsafe(text, [...params]) as { values(): Promise<unknown> };
+      const result = await query.values();
+      const meta: ValuesResult = (
+        typeof result === "object" && result !== null ? result : {}
+      ) as ValuesResult;
+      return {
+        columns: (meta.columns ?? []).map((column) => column.name),
+        rows: Array.isArray(result) ? (result as unknown[][]) : [],
+        command: meta.command ?? null,
+        affected: typeof meta.affectedRows === "number" ? meta.affectedRows : null,
+      };
+    },
+  };
+}
