@@ -27,7 +27,7 @@ const KEYS_SQL = `SELECT i.indexrelid::bigint AS "indexId", a.attname AS "column
   CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
   JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
   WHERE n.nspname = $1 AND c.relname = $2 AND i.indisunique AND i.indisvalid
-    AND i.indpred IS NULL AND i.indexprs IS NULL
+    AND i.indpred IS NULL AND i.indexprs IS NULL AND k.ord <= i.indnkeyatts
   ORDER BY i.indisprimary DESC, i.indexrelid, k.ord`;
 const COMPLETION_SQL = `SELECT table_name AS "tableName", column_name AS "columnName"
   FROM information_schema.columns WHERE table_schema = $1
