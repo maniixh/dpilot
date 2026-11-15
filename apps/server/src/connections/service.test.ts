@@ -68,6 +68,29 @@ test("stores the password encrypted", async () => {
   expect(Buffer.from(row.c).includes(Buffer.from("s3cret"))).toBe(false);
 });
 
+test("saves and returns readOnly", async () => {
+  const saved = await svc.create({ ...input, readOnly: true });
+  expect(saved.readOnly).toBe(true);
+  expect((await svc.get(saved.id)).readOnly).toBe(true);
+  expect((await svc.update(saved.id, { readOnly: false })).readOnly).toBe(false);
+  expect(changed).toEqual([saved.id]);
+});
+
+test("defaults readOnly to false", async () => {
+  const saved = await svc.create(input);
+  expect(saved.readOnly).toBe(false);
+  expect((await svc.update(saved.id, { label: "Renamed" })).readOnly).toBe(false);
+});
+
+test("resolve carries readOnly", async () => {
+  const saved = await svc.create({ ...input, readOnly: true });
+  expect((await svc.resolve(saved.id)).readOnly).toBe(true);
+  expect((await svc.draft({ id: saved.id })).readOnly).toBe(true);
+  expect((await svc.draft({ id: saved.id, readOnly: false })).readOnly).toBe(false);
+  expect((await svc.draft({ ...input, readOnly: true })).readOnly).toBe(true);
+  expect((await svc.draft(input)).readOnly).toBe(false);
+});
+
 test("saves a connection without a password", async () => {
   const saved = await svc.create(input);
   expect(saved.hasPassword).toBe(false);
@@ -176,6 +199,7 @@ test("draft without id returns the input as config", async () => {
     password: "p",
     database: "app",
     tls: { mode: "require", ca: null },
+    readOnly: false,
   });
 });
 

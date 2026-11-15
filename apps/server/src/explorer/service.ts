@@ -149,6 +149,7 @@ export function createExplorer(deps: ExplorerDeps): Explorer {
         password: connection.password,
         database: connection.database,
         tls: { mode: "off", ca: null },
+        readOnly: false,
       },
       ctx: { managed: true },
     };

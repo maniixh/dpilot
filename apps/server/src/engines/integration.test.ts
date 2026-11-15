@@ -73,6 +73,7 @@ async function configFor(fixture: Fixture): Promise<ConnectionConfig> {
     password: detail.connection.password,
     database: null,
     tls: { mode: "off", ca: null },
+    readOnly: false,
   };
 }
 

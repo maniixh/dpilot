@@ -44,6 +44,18 @@ test("creates, reads, updates and deletes a connection", async () => {
   expect(await gone.json()).toMatchObject({ error: "not_found" });
 });
 
+test("PATCH readOnly", async () => {
+  const { call } = setup();
+  const created = await (await call("POST", "/connections", input)).json();
+  expect(created).toMatchObject({ readOnly: false });
+  const { id } = created as { id: string };
+  const patched = await call("PATCH", `/connections/${id}`, { readOnly: true });
+  expect(await patched.json()).toMatchObject({ readOnly: true });
+  expect(await (await call("GET", `/connections/${id}`)).json()).toMatchObject({
+    readOnly: true,
+  });
+});
+
 test("never returns the password", async () => {
   const { call } = setup();
   await call("POST", "/connections", input);

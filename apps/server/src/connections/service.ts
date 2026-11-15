@@ -48,6 +48,7 @@ const rowSchema = z.object({
   database: z.string().nullable(),
   tls_mode: tlsModeSchema,
   tls_ca: z.string().nullable(),
+  read_only: z.union([z.literal(0), z.literal(1)]),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -146,7 +147,7 @@ export function createConnectionService(deps: ConnectionServiceDeps): Connection
       username: row.username,
       database: row.database,
       tls: { mode: row.tls_mode, ca: row.tls_ca },
-      readOnly: false,
+      readOnly: row.read_only === 1,
       hasPassword,
       passwordLost: row.password_lost === 1 || (hasPassword && !usable),
       createdAt: row.created_at,
@@ -221,8 +222,9 @@ export function createConnectionService(deps: ConnectionServiceDeps): Connection
       try {
         db.run(
           `INSERT INTO connections (id, label, engine, host, port, username, password_cipher,
-             password_iv, password_lost, database, tls_mode, tls_ca, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
+             password_iv, password_lost, database, tls_mode, tls_ca, read_only, created_at,
+             updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             input.label,
@@ -235,6 +237,7 @@ export function createConnectionService(deps: ConnectionServiceDeps): Connection
             input.database ?? null,
             input.tls.mode,
             input.tls.ca,
+            input.readOnly ? 1 : 0,
             now,
             now,
           ],
@@ -258,7 +261,7 @@ export function createConnectionService(deps: ConnectionServiceDeps): Connection
         db.run(
           `UPDATE connections SET label = ?, engine = ?, host = ?, port = ?, username = ?,
              password_cipher = ?, password_iv = ?, password_lost = ?, database = ?,
-             tls_mode = ?, tls_ca = ?, updated_at = ?
+             tls_mode = ?, tls_ca = ?, read_only = ?, updated_at = ?
            WHERE id = ?`,
           [
             label,
@@ -272,6 +275,7 @@ export function createConnectionService(deps: ConnectionServiceDeps): Connection
             patch.database === undefined ? current.database : patch.database,
             tls.mode,
             tls.ca,
+            (patch.readOnly ?? current.read_only === 1) ? 1 : 0,
             deps.now().toISOString(),
             id,
           ],
@@ -301,6 +305,7 @@ export function createConnectionService(deps: ConnectionServiceDeps): Connection
         password: await storedPassword(row),
         database: row.database,
         tls: { mode: row.tls_mode, ca: row.tls_ca },
+        readOnly: row.read_only === 1,
       };
     },
 
@@ -314,6 +319,7 @@ export function createConnectionService(deps: ConnectionServiceDeps): Connection
           password: request.password ?? null,
           database: request.database ?? null,
           tls: request.tls,
+          readOnly: request.readOnly ?? false,
         };
       }
       const { id, ...patch } = request;
@@ -327,6 +333,7 @@ export function createConnectionService(deps: ConnectionServiceDeps): Connection
         password: patch.password === undefined ? await storedPassword(row) : patch.password,
         database: patch.database === undefined ? row.database : patch.database,
         tls: patch.tls ?? { mode: row.tls_mode, ca: row.tls_ca },
+        readOnly: patch.readOnly ?? row.read_only === 1,
       };
     },
   };

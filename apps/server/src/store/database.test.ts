@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -41,6 +42,19 @@ test("keeps data across reopen", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("migrates a version-1 store and keeps connections", () => {
+  const db = new Database(":memory:", { strict: true });
+  db.run(MIGRATIONS[0] as string);
+  db.run("PRAGMA user_version = 1");
+  db.run(insertRow, ["1", "a", "postgres"]);
+  migrate(db);
+  expect(userVersion(db)).toBe(MIGRATIONS.length);
+  expect(db.query("SELECT label, read_only FROM connections").get()).toEqual({
+    label: "a",
+    read_only: 0,
+  });
 });
 
 test("rejects an unknown engine", () => {

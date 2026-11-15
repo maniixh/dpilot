@@ -11,6 +11,7 @@ const config: ConnectionConfig = {
   password: "x",
   database: null,
   tls: { mode: "off", ca: null },
+  readOnly: false,
 };
 const ctx = { managed: false };
 let sql: FakeSqlFactory;

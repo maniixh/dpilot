@@ -16,6 +16,7 @@ export interface ConnectionConfig {
   password: string | null;
   database: string | null;
   tls: TlsSettings;
+  readOnly: boolean;
 }
 
 export type ConnectionErrorCode =
