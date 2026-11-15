@@ -1,11 +1,14 @@
 import { type ReactNode, useEffect, useState } from "react";
-import { Link, Route, Switch } from "wouter";
+import { Link, Route, Switch, useLocation } from "wouter";
 import { ApiError } from "./api/client.ts";
 import { useDockerStatus, useHealth } from "./api/status.ts";
 import {
   EditConnectionScreen,
   NewConnectionScreen,
 } from "./features/connections/ConnectionScreens.tsx";
+import { DatabaseOverview } from "./features/explorer/DatabaseOverview.tsx";
+import { parseExplorerPath } from "./features/explorer/paths.ts";
+import { ServerOverview } from "./features/explorer/ServerOverview.tsx";
 import { Sidebar } from "./features/explorer/Sidebar.tsx";
 import { HomeScreen } from "./features/instances/HomeScreen.tsx";
 import { InstanceScreen } from "./features/instances/InstanceScreen.tsx";
@@ -74,12 +77,11 @@ export function App() {
               <Route path="/connections/:id/edit">
                 {(params) => <EditConnectionScreen key={params.id} id={params.id} />}
               </Route>
+              <Route path="/c/*">
+                <ExplorerScreen />
+              </Route>
               <Route>
-                <Message title="There's nothing at this address.">
-                  <Link href="/" className="underline underline-offset-4">
-                    Go to your servers
-                  </Link>
-                </Message>
+                <NotFound />
               </Route>
             </Switch>
           </AppLayout>
@@ -93,6 +95,25 @@ export function App() {
         )}
       </main>
     </div>
+  );
+}
+
+function ExplorerScreen() {
+  // Subscribe to navigation, but parse the raw pathname: wouter's location is already decoded.
+  useLocation();
+  const path = parseExplorerPath(window.location.pathname);
+  if (path === null) return <NotFound />;
+  if (path.db === null) return <ServerOverview key={path.target} target={path.target} />;
+  return <DatabaseOverview key={`${path.target}/${path.db}`} target={path.target} db={path.db} />;
+}
+
+function NotFound() {
+  return (
+    <Message title="There's nothing at this address.">
+      <Link href="/" className="underline underline-offset-4">
+        Go to your servers
+      </Link>
+    </Message>
   );
 }
 

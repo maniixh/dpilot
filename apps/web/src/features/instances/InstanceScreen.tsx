@@ -15,6 +15,7 @@ import { buttonClass } from "../../ui/button.ts";
 import { CopyButton } from "../../ui/CopyButton.tsx";
 import { Fact, Facts } from "../../ui/Facts.tsx";
 import { StateMark } from "../../ui/StateMark.tsx";
+import { targetHref } from "../explorer/paths.ts";
 import { availableActions, formatBytes, pullPercent } from "./present.ts";
 
 const PROVISIONING = new Set<InstanceStatus>(["pulling", "creating", "failed"]);
@@ -77,6 +78,11 @@ function InstanceView({ instance }: { instance: InstanceDetail }) {
         <div className="mt-6 flex flex-wrap items-center gap-x-8 gap-y-4" aria-live="polite">
           <StateMark state={state} size="lg" />
           <Actions instance={instance} />
+          {state.status === "ready" && (
+            <Link href={targetHref(`s.${instance.name}`)} className={buttonClass.secondary}>
+              Browse
+            </Link>
+          )}
         </div>
       </header>
 

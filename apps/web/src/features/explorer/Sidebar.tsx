@@ -3,18 +3,11 @@ import type { ReactNode } from "react";
 import { Link } from "wouter";
 import { ApiError } from "../../api/client.ts";
 import { useDatabases, useObjects, useSchemas, useTargets } from "../../api/explorer.ts";
+import { databaseHref, targetHref } from "./paths.ts";
 import { Tree, TreeEmpty, TreeNode, TreeStatus } from "./TreeNode.tsx";
 import { nodeId } from "./tree-model.ts";
 
-export function targetHref(target: string): string {
-  return `/c/${encodeURIComponent(target)}`;
-}
-
-export function databaseHref(target: string, db: string): string {
-  return `${targetHref(target)}/db/${encodeURIComponent(db)}`;
-}
-
-function errorText(error: Error | null): string | null {
+export function errorText(error: Error | null): string | null {
   if (error === null) return null;
   return error instanceof ApiError ? error.message : "Dpilot couldn't load this.";
 }

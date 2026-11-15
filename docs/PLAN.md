@@ -202,8 +202,10 @@ POST   /instances/:id/start|stop|restart
 DELETE /instances/:id?removeVolume=
 GET    /instances/:id/compose          docker-compose.yml export
 POST   /instances/:id/snapshot         volume snapshot / clone
-CRUD   /connections                    saved profiles (instances auto-create one)
+CRUD   /connections                    saved profiles (external servers only)
 POST   /connections/test
+GET    /targets                        Dpilot servers + saved connections
+GET    /c/:target/info | /variables    target = s.<server name> | c.<connection id>
 GET    /c/:conn/databases              (+ POST create, DELETE drop, PATCH settings)
 GET    /c/:conn/db/:db/tables          (+ create/alter/rename/drop)
 GET    /c/:conn/db/:db/tables/:t       columns, indexes, FKs, triggers, checks
@@ -220,6 +222,10 @@ CRUD   /history | /saved-queries
 ```
 
 WebSocket channels: `pull-progress`, `instance-logs`, `instance-stats`, `query-progress`, `import-export-progress`.
+
+Dpilot servers are live targets (`s.<name>`), read from Docker each time, not stored connection
+rows; only external servers are saved. See
+[the M2 design](superpowers/specs/2026-11-15-m2-connections-design.md).
 
 ## 7. Security
 

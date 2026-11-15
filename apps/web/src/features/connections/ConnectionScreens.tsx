@@ -9,7 +9,7 @@ import {
   useUpdateConnection,
 } from "../../api/connections.ts";
 import { buttonClass } from "../../ui/button.ts";
-import { targetHref } from "../explorer/Sidebar.tsx";
+import { targetHref } from "../explorer/paths.ts";
 import { ConnectionForm } from "./ConnectionForm.tsx";
 import { emptyForm, fromSaved, toInput, toPatch } from "./form-model.ts";
 

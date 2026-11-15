@@ -22,6 +22,17 @@ containers (MySQL, MariaDB, PostgreSQL and more) and work with their schemas and
   delete it.
 - Watch CPU and memory use, and read the latest log lines.
 - Download a Docker Compose file that runs the same server without Dpilot.
+- Save connections to other MySQL, MariaDB or PostgreSQL servers, with optional TLS (require, or
+  verify against a pasted CA certificate). Test a connection before saving it.
+- Browse every server in the sidebar: Dpilot servers and saved connections, then databases,
+  schemas (PostgreSQL), tables, views, procedures and functions.
+- Open a server to see its version, user, uptime, charset and time zone, and search its
+  variables. Open a database to see what it contains.
+
+Saved connections live in `~/.dpilot/dpilot.db`. Their passwords are encrypted with a key in
+`~/.dpilot/key`. Both files are readable by your user only (on Windows, through your user
+profile's permissions). If the key is lost, Dpilot keeps the connections but asks for each
+password again.
 
 Dpilot names its containers `dpilot-<name>` and volumes `dpilot_<name>_data`, and labels them
 `dpilot.managed=true`. It only lists and changes containers with that label.
