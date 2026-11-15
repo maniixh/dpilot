@@ -109,3 +109,12 @@ export {
   createSessionRequestSchema,
   sessionTokenSchema,
 } from "./session.ts";
+export {
+  classifyStatement,
+  destructiveReasons,
+  explainSql,
+  type StatementClass,
+} from "./sql/classify.ts";
+export { redactSql } from "./sql/redact.ts";
+export { type SqlStatement, splitStatements, statementAt } from "./sql/split.ts";
+export { type Token, type TokenKind, tokenize } from "./sql/tokens.ts";
