@@ -39,6 +39,11 @@ function invalid(message: string): DataError {
   return new DataError("invalid_request", message);
 }
 
+/** Catalog type text without length/precision modifiers, which would truncate in a cast. */
+export function postgresCastType(type: string): string {
+  return type.replace(/\([^)]*\)/g, "");
+}
+
 /** Numbers placeholders and keeps parameter order in step with the text. */
 class Params {
   readonly values: SqlParam[] = [];
@@ -49,7 +54,7 @@ class Params {
     this.values.push(value);
     if (this.dialect === "mysql") return "?";
     const placeholder = `$${this.values.length}`;
-    return castTo === null ? placeholder : `${placeholder}::${castTo}`;
+    return castTo === null ? placeholder : `${placeholder}::${postgresCastType(castTo)}`;
   }
 }
 
@@ -91,15 +96,25 @@ function filterClause(dialect: Dialect, meta: TableMeta, filter: Filter, params:
   if (filter.op === "is_null") return `${quoted} IS NULL`;
   if (filter.op === "not_null") return `${quoted} IS NOT NULL`;
   if (column.kind === "binary") throw invalid(`Can't filter binary column ${column.name}.`);
-  if (filter.op === "in" || filter.op === "not_in") {
-    const marks = filter.values.map((value) => params.add(value, column.type));
-    return `${quoted} ${filter.op === "in" ? "IN" : "NOT IN"} (${marks.join(", ")})`;
-  }
+  const isList = filter.op === "in" || filter.op === "not_in";
   if (filter.op === "like" || filter.op === "not_like") {
     const subject = column.kind === "text" ? quoted : asText(dialect, quoted);
     return `${subject} ${filter.op === "like" ? "LIKE" : "NOT LIKE"} ${params.add(filter.value)}`;
   }
-  return `${quoted} ${COMPARISONS[filter.op]} ${params.add(filter.value, column.type)}`;
+  const textCompared =
+    dialect === "postgres" && (column.kind === "json" || column.kind === "other");
+  const subject = textCompared ? asText(dialect, quoted) : quoted;
+  const bind = (value: string): string => {
+    if (textCompared) return params.add(value);
+    return dialect === "mysql"
+      ? mysqlKeyPlaceholder(column, value, params)
+      : params.add(value, column.type);
+  };
+  if (isList) {
+    const marks = filter.values.map(bind);
+    return `${subject} ${filter.op === "in" ? "IN" : "NOT IN"} (${marks.join(", ")})`;
+  }
+  return `${subject} ${COMPARISONS[filter.op]} ${bind(filter.value)}`;
 }
 
 function escapeLike(term: string): string {

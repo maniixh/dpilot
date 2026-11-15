@@ -6,6 +6,7 @@ import {
   deleteRow,
   insertRow,
   lockRow,
+  postgresCastType,
   qualified,
   quoteIdent,
   selectPage,
@@ -75,6 +76,88 @@ describe("quoteIdent", () => {
 });
 
 describe("selectPage", () => {
+  test("drops length modifiers from Postgres casts so values are not truncated", () => {
+    const sized: TableMeta = {
+      ...meta,
+      columns: [
+        column("id", "integer", "bigint"),
+        column("code", "text", "character varying(5)"),
+        column("price", "decimal", "numeric(10,2)"),
+        column("at", "datetime", "timestamp(3) with time zone"),
+        column("tags", "other", "character varying(5)[]"),
+      ],
+    };
+    const update = updateRow(
+      "postgres",
+      sized,
+      ref,
+      { id: "1" },
+      {
+        code: { set: "toolong" },
+        price: { set: "1.239" },
+        at: { set: "2024-01-01" },
+      },
+    );
+    expect(update.text).toBe(
+      'UPDATE "public"."grid" SET "code" = $1::character varying, "price" = $2::numeric, ' +
+        '"at" = $3::timestamp with time zone WHERE "id" = $4::bigint',
+    );
+    const select = selectPage(
+      "postgres",
+      sized,
+      ref,
+      query({ filters: [{ op: "in", column: "code", values: ["a", "b"] }] }),
+    );
+    expect(select.text).toContain('"code" IN ($1::character varying, $2::character varying)');
+    expect(postgresCastType("character varying(5)[]")).toBe("character varying[]");
+    expect(postgresCastType("bit(3)")).toBe("bit");
+    expect(postgresCastType("bigint")).toBe("bigint");
+  });
+
+  test("casts MySQL integer and decimal filter values exactly", () => {
+    const built = selectPage(
+      "mysql",
+      meta,
+      mysqlRef,
+      query({
+        ref: mysqlRef,
+        filters: [
+          { op: "eq", column: "id", value: "9007199254740993" },
+          { op: "in", column: "id", values: ["1", "2"] },
+          { op: "ge", column: "price", value: "1.5" },
+          { op: "eq", column: "note", value: "x" },
+        ],
+      }),
+    );
+    expect(built.text).toContain("`id` = CAST(? AS SIGNED)");
+    expect(built.text).toContain("`id` IN (CAST(? AS SIGNED), CAST(? AS SIGNED))");
+    expect(built.text).toContain("`price` >= CAST(? AS DECIMAL(65,30))");
+    expect(built.text).toContain("`note` = ?");
+  });
+
+  test("compares Postgres json and other kinds as text for equality filters", () => {
+    const jsonMeta: TableMeta = {
+      ...meta,
+      columns: [column("doc", "json", "json"), column("loc", "other", "point")],
+      primaryKey: [],
+      editable: false,
+    };
+    const built = selectPage(
+      "postgres",
+      jsonMeta,
+      ref,
+      query({
+        filters: [
+          { op: "eq", column: "doc", value: '{"a":1}' },
+          { op: "not_in", column: "loc", values: ["(1,2)"] },
+        ],
+      }),
+    );
+    expect(built.text).toContain('"doc"::text = $1');
+    expect(built.text).toContain('"loc"::text NOT IN ($2)');
+    expect(built.text).not.toContain("::json");
+  });
+
   test("casts dates and json to text and selects key aliases", () => {
     const built = selectPage("postgres", meta, ref, query());
     expect(built.text).toContain('"at"::text AS "at"');
@@ -120,7 +203,7 @@ describe("selectPage", () => {
     );
     expect(built.text).not.toContain("DROP");
     expect(built.text).toContain("`note` = ?");
-    expect(built.text).toContain("`id` IN (?, ?)");
+    expect(built.text).toContain("`id` IN (CAST(? AS SIGNED), CAST(? AS SIGNED))");
     expect(built.text).toContain("`at` IS NULL");
     expect(built.params).toEqual([secret, "1", "2", 50, 10]);
     expect(built.text.endsWith("LIMIT ? OFFSET ?")).toBe(true);
@@ -205,7 +288,7 @@ describe("countRows and aggregate", () => {
       filters: [{ op: "eq", column: "id", value: "1" }],
       search: null,
     });
-    expect(built.text).toBe("SELECT COUNT(*) FROM `grid` WHERE `id` = ?");
+    expect(built.text).toBe("SELECT COUNT(*) FROM `grid` WHERE `id` = CAST(? AS SIGNED)");
     expect(built.params).toEqual(["1"]);
   });
 
