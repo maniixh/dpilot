@@ -1,4 +1,4 @@
-import type { TargetErrorCode } from "@dpilot/shared";
+import type { DataErrorCode, TargetErrorCode } from "@dpilot/shared";
 import { type Context, type Handler, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { localRequestGuard } from "./auth/local-request.ts";
@@ -11,11 +11,12 @@ import {
 } from "./connections/types.ts";
 import { DockerApiError } from "./docker/engine-api.ts";
 import { type DockerClient, DockerTimeoutError, DockerUnavailableError } from "./docker/types.ts";
-import { TargetError } from "./engines/types.ts";
+import { DataError, TargetError } from "./engines/types.ts";
 import type { Explorer } from "./explorer/types.ts";
 import { InstanceError, type InstanceService } from "./instances/service.ts";
 import { catalogRoutes } from "./routes/catalog.ts";
 import { connectionRoutes } from "./routes/connections.ts";
+import { dataRoutes } from "./routes/data.ts";
 import { dockerRoutes } from "./routes/docker.ts";
 import { explorerRoutes } from "./routes/explorer.ts";
 import { healthRoutes } from "./routes/health.ts";
@@ -46,6 +47,7 @@ export function createApp(deps: AppDeps) {
     .route("/connections", connectionRoutes(deps.connections, deps.explorer))
     .get("/targets", async (c) => c.json(await deps.explorer.targets()))
     .route("/c", explorerRoutes(deps.explorer))
+    .route("/c", dataRoutes(deps.explorer))
     .all("*", (c) => c.json({ error: "not_found" }, 404));
 
   const app = new Hono().use(localRequestGuard()).route("/api", api);
@@ -78,6 +80,17 @@ const TARGET_STATUS = {
   timeout: 504,
 } as const satisfies Record<TargetErrorCode, ContentfulStatusCode>;
 
+const DATA_STATUS = {
+  invalid_request: 400,
+  read_only: 403,
+  not_editable: 409,
+  row_not_found: 404,
+  key_not_unique: 409,
+  confirmation_required: 409,
+  busy: 409,
+  run_not_found: 404,
+} as const satisfies Record<DataErrorCode, ContentfulStatusCode>;
+
 /** Known failures carry a user-facing message; anything else stays a generic 500. */
 function errorResponse(error: Error, c: Context) {
   if (error instanceof InstanceError) {
@@ -91,6 +104,9 @@ function errorResponse(error: Error, c: Context) {
   }
   if (error instanceof TargetError) {
     return c.json({ error: error.code, message: error.message }, TARGET_STATUS[error.code]);
+  }
+  if (error instanceof DataError) {
+    return c.json({ error: error.code, message: error.message }, DATA_STATUS[error.code]);
   }
   if (error instanceof DockerUnavailableError) {
     return c.json({ error: "docker_unavailable", message: error.message }, 503);

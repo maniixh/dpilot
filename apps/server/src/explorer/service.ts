@@ -12,9 +12,10 @@ import {
   type ConnectionService,
 } from "../connections/types.ts";
 import { DockerTimeoutError, DockerUnavailableError } from "../docker/types.ts";
-import { createAdapter } from "../engines/registry.ts";
+import { createAdapter, createDataAdapter } from "../engines/registry.ts";
 import {
   type AdapterContext,
+  type DataAdapter,
   type ExplorerAdapter,
   type SqlClientFactory,
   TargetError,
@@ -33,6 +34,15 @@ const DOCKER_DOWN = "Docker isn't reachable, so Dpilot's servers can't be listed
 const PASSWORD_LOST_REASON = "Enter the password again to browse it.";
 /** Failures that mean the session itself is bad, so the cached adapter must go. */
 const CONNECTION_FAILURES = new Set(["auth_failed", "unreachable", "tls_failed", "timeout"]);
+
+interface CacheEntry {
+  fingerprint: string;
+  config: ConnectionConfig;
+  ctx: AdapterContext;
+  adapter: ExplorerAdapter;
+  /** Created on first use, so browsing a server never opens a data client. */
+  data: DataAdapter | null;
+}
 
 type Availability = "ready" | "stopped" | "starting" | "unhealthy";
 
@@ -85,12 +95,19 @@ function connectionTarget(saved: SavedConnection): TargetSummary {
 }
 
 export function createExplorer(deps: ExplorerDeps): Explorer {
-  const cache = new Map<TargetId, { fingerprint: string; adapter: ExplorerAdapter }>();
+  const cache = new Map<TargetId, CacheEntry>();
+
+  async function closeEntry(entry: CacheEntry | undefined): Promise<void> {
+    await Promise.all([
+      entry?.adapter.close().catch(() => {}),
+      entry?.data?.close().catch(() => {}),
+    ]);
+  }
 
   async function forget(target: TargetId): Promise<void> {
     const entry = cache.get(target);
     cache.delete(target);
-    await entry?.adapter.close().catch(() => {});
+    await closeEntry(entry);
   }
 
   async function servers(): Promise<TargetsResponse["servers"]> {
@@ -172,7 +189,7 @@ export function createExplorer(deps: ExplorerDeps): Explorer {
     }
   }
 
-  async function adapterFor(target: TargetId): Promise<ExplorerAdapter> {
+  async function entryFor(target: TargetId): Promise<CacheEntry> {
     const parsed = parseTargetId(target);
     if (parsed === null) throw new TargetError("target_not_found", NOT_FOUND);
     const { config, ctx } =
@@ -181,14 +198,35 @@ export function createExplorer(deps: ExplorerDeps): Explorer {
         : await savedConfig(parsed.id);
     const fingerprint = JSON.stringify(config);
     const cached = cache.get(target);
-    if (cached?.fingerprint === fingerprint) return cached.adapter;
+    if (cached?.fingerprint === fingerprint) return cached;
     if (cached) {
       cache.delete(target);
-      void cached.adapter.close().catch(() => {});
+      void closeEntry(cached);
     }
-    const adapter = createAdapter(config, deps.sql, ctx);
-    cache.set(target, { fingerprint, adapter });
-    return adapter;
+    const entry: CacheEntry = {
+      fingerprint,
+      config,
+      ctx,
+      adapter: createAdapter(config, deps.sql, ctx),
+      data: null,
+    };
+    cache.set(target, entry);
+    return entry;
+  }
+
+  async function withEntry<T>(
+    target: TargetId,
+    use: (entry: CacheEntry) => Promise<T>,
+  ): Promise<T> {
+    const entry = await entryFor(target);
+    try {
+      return await use(entry);
+    } catch (error) {
+      if (error instanceof TargetError && CONNECTION_FAILURES.has(error.code)) {
+        if (cache.get(target) === entry) await forget(target);
+      }
+      throw error;
+    }
   }
 
   return {
@@ -197,17 +235,13 @@ export function createExplorer(deps: ExplorerDeps): Explorer {
       return { servers: serverList, connections: saved.map(connectionTarget) };
     },
 
-    async run(target, use) {
-      const adapter = await adapterFor(target);
-      try {
-        return await use(adapter);
-      } catch (error) {
-        if (error instanceof TargetError && CONNECTION_FAILURES.has(error.code)) {
-          if (cache.get(target)?.adapter === adapter) await forget(target);
-        }
-        throw error;
-      }
-    },
+    run: (target, use) => withEntry(target, (entry) => use(entry.adapter)),
+
+    data: (target, use) =>
+      withEntry(target, (entry) => {
+        entry.data ??= createDataAdapter(entry.config, deps.sql, entry.ctx);
+        return use(entry.data, entry.ctx);
+      }),
 
     async test(request) {
       const config = await deps.connections.draft(request);

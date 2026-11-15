@@ -3,6 +3,7 @@ import type { EngineId } from "@dpilot/shared";
 import { createConnectionService } from "../connections/service.ts";
 import type { ConnectionService } from "../connections/types.ts";
 import { DockerUnavailableError } from "../docker/types.ts";
+import type { AdapterContext, DataAdapter } from "../engines/types.ts";
 import { buildContainerSpec } from "../instances/engine-specs.ts";
 import { createInstanceService, type InstanceService } from "../instances/service.ts";
 import { openStore } from "../store/database.ts";
@@ -198,6 +199,32 @@ test("forget closes the cached adapter", async () => {
   await explorer.run("s.orders", (a) => a.databases());
   await explorer.forget("s.orders");
   expect(sql.closed).toHaveLength(1);
+});
+
+test("replaces the data adapter when readOnly changes", async () => {
+  const saved = await connections.create(input);
+  const target = `c.${saved.id}`;
+  const seen: boolean[] = [];
+  const use = async (a: DataAdapter, ctx: AdapterContext) => {
+    seen.push(ctx.readOnly);
+    await a.completion("app", null);
+  };
+  await explorer.data(target, use);
+  await explorer.data(target, use);
+  expect(sql.created).toHaveLength(1);
+  await connections.update(saved.id, { readOnly: true });
+  await explorer.data(target, use);
+  expect(seen).toEqual([false, false, true]);
+  expect(sql.created).toHaveLength(2);
+  expect(sql.closed).toHaveLength(1);
+});
+
+test("forget closes the data adapter too", async () => {
+  addServer("orders");
+  await explorer.data("s.orders", (a) => a.completion("app", "public"));
+  await explorer.run("s.orders", (a) => a.databases());
+  await explorer.forget("s.orders");
+  expect(sql.closed).toHaveLength(2);
 });
 
 test("test reports a failure as a result", async () => {
