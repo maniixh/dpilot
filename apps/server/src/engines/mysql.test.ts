@@ -13,7 +13,7 @@ const config: ConnectionConfig = {
   tls: { mode: "off", ca: null },
   readOnly: false,
 };
-const ctx = { managed: false };
+const ctx = { managed: false, readOnly: false };
 let sql: FakeSqlFactory;
 beforeEach(() => {
   sql = new FakeSqlFactory();

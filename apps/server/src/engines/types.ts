@@ -1,11 +1,23 @@
 import type {
+  AggregateRequest,
+  AggregateResult,
+  CountRequest,
   DatabaseEntry,
   DataErrorCode,
+  DeleteRequest,
+  EditResult,
+  InsertRequest,
   ObjectGroups,
+  RowKey,
+  RowsPage,
+  RowsQuery,
   SchemaEntry,
   ServerInfo,
   ServerVariable,
+  TableMeta,
+  TableRef,
   TargetErrorCode,
+  UpdateRequest,
 } from "@dpilot/shared";
 import type { ConnectionConfig } from "../connections/types.ts";
 
@@ -46,6 +58,29 @@ export interface ExplorerAdapter {
 export interface AdapterContext {
   /** True for servers Dpilot created, which changes the auth failure hint. */
   managed: boolean;
+  /** True when the connection must never change data. */
+  readOnly: boolean;
+}
+
+export interface DataAdapter {
+  table(db: string, ref: TableRef): Promise<TableMeta>;
+  rows(db: string, query: RowsQuery): Promise<RowsPage>;
+  count(db: string, request: CountRequest): Promise<number>;
+  aggregate(db: string, request: AggregateRequest): Promise<AggregateResult>;
+  insert(db: string, request: InsertRequest): Promise<EditResult>;
+  update(db: string, request: UpdateRequest): Promise<EditResult>;
+  remove(db: string, request: DeleteRequest): Promise<EditResult>;
+  readCell(db: string, ref: TableRef, key: RowKey, column: string): Promise<Uint8Array>;
+  writeCell(
+    db: string,
+    ref: TableRef,
+    key: RowKey,
+    column: string,
+    bytes: Uint8Array,
+  ): Promise<EditResult>;
+  /** Column names per table in the schema (at most 2000 tables). */
+  completion(db: string, schema: string | null): Promise<Record<string, string[]>>;
+  close(): Promise<void>;
 }
 
 export class DataError extends Error {

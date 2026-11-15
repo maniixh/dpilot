@@ -9,7 +9,9 @@ import {
   postgresCastType,
   qualified,
   quoteIdent,
+  selectCell,
   selectPage,
+  updateCell,
   updateRow,
 } from "./dialect.ts";
 import { DataError } from "./types.ts";
@@ -394,6 +396,31 @@ describe("edits", () => {
       "invalid_request",
     );
     expect(invalid(() => updateRow("postgres", meta, ref, { id: "1" }, {})).code).toBe(
+      "invalid_request",
+    );
+  });
+
+  test("selects one cell by key, casting non-text kinds", () => {
+    expect(selectCell("postgres", meta, ref, { id: "1" }, "img").text).toBe(
+      'SELECT "img" FROM "public"."grid" WHERE "id" = $1::bigint',
+    );
+    expect(selectCell("postgres", meta, ref, { id: "1" }, "tags").text).toBe(
+      'SELECT "tags"::text FROM "public"."grid" WHERE "id" = $1::bigint',
+    );
+    expect(selectCell("mysql", meta, mysqlRef, { id: "1" }, "at").text).toBe(
+      "SELECT CAST(`at` AS CHAR) FROM `grid` WHERE `id` = CAST(? AS SIGNED)",
+    );
+    expect(invalid(() => selectCell("mysql", meta, mysqlRef, { id: "1" }, "nope")).code).toBe(
+      "invalid_request",
+    );
+  });
+
+  test("writes bytes to a binary column only", () => {
+    const bytes = new Uint8Array([1, 2]);
+    const pg = updateCell("postgres", meta, ref, { id: "1" }, "img", bytes);
+    expect(pg.text).toBe('UPDATE "public"."grid" SET "img" = $1::bytea WHERE "id" = $2::bigint');
+    expect(pg.params).toEqual([bytes, "1"]);
+    expect(invalid(() => updateCell("postgres", meta, ref, { id: "1" }, "note", bytes)).code).toBe(
       "invalid_request",
     );
   });

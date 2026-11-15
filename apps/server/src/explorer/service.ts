@@ -151,7 +151,7 @@ export function createExplorer(deps: ExplorerDeps): Explorer {
         tls: { mode: "off", ca: null },
         readOnly: false,
       },
-      ctx: { managed: true },
+      ctx: { managed: true, readOnly: false },
     };
   }
 
@@ -159,7 +159,8 @@ export function createExplorer(deps: ExplorerDeps): Explorer {
 
   async function savedConfig(id: string): Promise<Resolved> {
     try {
-      return { config: await deps.connections.resolve(id), ctx: { managed: false } };
+      const config = await deps.connections.resolve(id);
+      return { config, ctx: { managed: false, readOnly: config.readOnly } };
     } catch (error) {
       if (error instanceof ConnectionError && error.code === "not_found") {
         throw new TargetError("target_not_found", NOT_FOUND);
@@ -210,7 +211,10 @@ export function createExplorer(deps: ExplorerDeps): Explorer {
 
     async test(request) {
       const config = await deps.connections.draft(request);
-      const adapter = createAdapter(config, deps.sql, { managed: false });
+      const adapter = createAdapter(config, deps.sql, {
+        managed: false,
+        readOnly: config.readOnly,
+      });
       try {
         return { ok: true, info: await adapter.info() };
       } catch (error) {

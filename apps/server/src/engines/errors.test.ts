@@ -13,7 +13,7 @@ const config: ConnectionConfig = {
   tls: { mode: "off", ca: null },
   readOnly: false,
 };
-const external = { managed: false };
+const external = { managed: false, readOnly: false };
 
 test.each([
   [{ code: "ERR_POSTGRES_SERVER_ERROR", errno: "28P01" }, "auth_failed"],
@@ -48,7 +48,10 @@ test("keeps the driver message for query failures", () => {
 });
 
 test("adds the Dpilot server hint to auth failures", () => {
-  const error = classifyError(driverError({ errno: "28P01" }), config, { managed: true });
+  const error = classifyError(driverError({ errno: "28P01" }), config, {
+    managed: true,
+    readOnly: false,
+  });
   expect(error.message).toContain("the password the server was created with");
 });
 

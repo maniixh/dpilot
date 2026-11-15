@@ -78,7 +78,7 @@ async function configFor(fixture: Fixture): Promise<ConnectionConfig> {
 }
 
 function adapterFor(config: ConnectionConfig) {
-  return createAdapter(config, bunSqlFactory, { managed: true });
+  return createAdapter(config, bunSqlFactory, { managed: true, readOnly: false });
 }
 
 async function failure(run: () => Promise<unknown>): Promise<TargetError> {

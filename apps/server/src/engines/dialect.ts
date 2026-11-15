@@ -45,12 +45,12 @@ export function postgresCastType(type: string): string {
 }
 
 /** Numbers placeholders and keeps parameter order in step with the text. */
-class Params {
-  readonly values: SqlParam[] = [];
+class Params<V = SqlParam> {
+  readonly values: (SqlParam | V)[] = [];
   constructor(private readonly dialect: Dialect) {}
 
   /** `castTo` is a catalog type text; only Postgres needs it. */
-  add(value: SqlParam, castTo: string | null = null): string {
+  add(value: SqlParam | V, castTo: string | null = null): string {
     this.values.push(value);
     if (this.dialect === "mysql") return "?";
     const placeholder = `$${this.values.length}`;
@@ -227,7 +227,7 @@ function assignedColumn(meta: TableMeta, name: string): ColumnMeta {
 }
 
 /** MySQL compares text to numbers as doubles, which would blur 64-bit keys; cast exactly. */
-function mysqlKeyPlaceholder(column: ColumnMeta, value: string, params: Params): string {
+function mysqlKeyPlaceholder<V>(column: ColumnMeta, value: string, params: Params<V>): string {
   if (column.kind === "integer") {
     const target = /\bunsigned\b/i.test(column.type) ? "UNSIGNED" : "SIGNED";
     return `CAST(${params.add(value)} AS ${target})`;
@@ -236,7 +236,12 @@ function mysqlKeyPlaceholder(column: ColumnMeta, value: string, params: Params):
   return params.add(value);
 }
 
-function keyPredicate(dialect: Dialect, meta: TableMeta, key: RowKey, params: Params): string {
+function keyPredicate<V>(
+  dialect: Dialect,
+  meta: TableMeta,
+  key: RowKey,
+  params: Params<V>,
+): string {
   const names = Object.keys(key);
   const exact =
     meta.primaryKey.length > 0 &&
@@ -306,6 +311,50 @@ export function updateRow(
   const where = keyPredicate(dialect, meta, key, params);
   return {
     text: `UPDATE ${qualified(dialect, ref)} SET ${assignments.join(", ")} WHERE ${where}`,
+    params: params.values,
+  };
+}
+
+/** One cell as the database would write it as text; text and binary stay native. */
+export function selectCell(
+  dialect: Dialect,
+  meta: TableMeta,
+  ref: TableRef,
+  key: RowKey,
+  columnName: string,
+): BuiltQuery {
+  const params = new Params(dialect);
+  const column = findColumn(meta, columnName);
+  const quoted = quoteIdent(dialect, column.name);
+  const expression =
+    column.kind === "text" || column.kind === "binary" ? quoted : asText(dialect, quoted);
+  const where = keyPredicate(dialect, meta, key, params);
+  return {
+    text: `SELECT ${expression} FROM ${qualified(dialect, ref)} WHERE ${where}`,
+    params: params.values,
+  };
+}
+
+export interface BuiltCellWrite {
+  text: string;
+  params: (SqlParam | Uint8Array)[];
+}
+
+export function updateCell(
+  dialect: Dialect,
+  meta: TableMeta,
+  ref: TableRef,
+  key: RowKey,
+  columnName: string,
+  bytes: Uint8Array,
+): BuiltCellWrite {
+  const column = findColumn(meta, columnName);
+  if (column.kind !== "binary") throw invalid(`Column ${columnName} isn't a binary column.`);
+  const params = new Params<Uint8Array>(dialect);
+  const value = params.add(bytes, column.type);
+  const where = keyPredicate(dialect, meta, key, params);
+  return {
+    text: `UPDATE ${qualified(dialect, ref)} SET ${quoteIdent(dialect, column.name)} = ${value} WHERE ${where}`,
     params: params.values,
   };
 }
