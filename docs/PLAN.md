@@ -278,6 +278,14 @@ rows; only external servers are saved. See
 | M8  | MongoDB & Redis            | Document and key-value adapters + UIs                                                                                                                                | Provision, browse and edit both                                           |
 | M9  | Release                    | Cross-platform binaries (win/mac/linux), `dpilot doctor`, docs                                                                                                       | Tagged release with binaries                                              |
 
+**M3 is done** ([design](superpowers/specs/2026-11-15-m3-data-design.md)). Shipped: paged grid with
+sort/filter/search, cell edit, insert and delete, BLOB handling, and a SQL editor with schema
+completion, multi-statement results, cancel, destructive-statement confirmation, history, saved
+queries and file execution (up to 16 MB). Deviations: SQLite moved to a later milestone, so M3
+covers MySQL, MariaDB and PostgreSQL. Read-only connections are a guard rail; a `SELECT`-only
+database user is the real protection. Run results are capped at 10,000 rows and 100 outcomes
+(first 50 and last 50). Files up to 1 MB open in a new tab; larger files run directly.
+
 ## 11. Testing Strategy
 
 - **Unit (`bun test`):** DDL builders per dialect, identifier quoting, filter→SQL compilation, catalog logic.

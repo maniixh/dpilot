@@ -28,6 +28,19 @@ containers (MySQL, MariaDB, PostgreSQL and more) and work with their schemas and
   schemas (PostgreSQL), tables, views, procedures and functions.
 - Open a server to see its version, user, uptime, charset and time zone, and search its
   variables. Open a database to see what it contains.
+- Browse a table's rows in a virtualised grid with sorting, filters and search. Edit cells, insert
+  and delete rows, and see BLOB values safely. Tables without a primary key are read-only.
+- Write SQL in the editor, with syntax highlighting and completion from the database's schema.
+  Run the statement at the cursor (Ctrl/Cmd+Enter) or everything (Ctrl/Cmd+Shift+Enter), and
+  cancel a run with Esc. Each statement gets its own result: rows, an affected count, or the
+  error with its position. Results are capped at 10,000 rows, and a run shows at most its first
+  50 and last 50 outcomes. Destructive statements ask for confirmation first.
+- Keep up to 10 editor tabs, search the query history, save named queries, and run a `.sql` file
+  of up to 16 MB.
+
+A connection marked read-only makes Dpilot refuse statements that change data. This is a guard
+rail, not a security boundary. For real protection, connect with a database user that only has
+`SELECT` privileges.
 
 Saved connections live in `~/.dpilot/dpilot.db`. Their passwords are encrypted with a key in
 `~/.dpilot/key`. Both files are readable by your user only (on Windows, through your user
