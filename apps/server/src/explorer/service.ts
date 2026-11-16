@@ -104,9 +104,16 @@ export function createExplorer(deps: ExplorerDeps): Explorer {
     ]);
   }
 
+  const forgetListeners: ((target: TargetId) => void)[] = [];
+
+  function notifyForgotten(target: TargetId): void {
+    for (const listener of forgetListeners) listener(target);
+  }
+
   async function forget(target: TargetId): Promise<void> {
     const entry = cache.get(target);
     cache.delete(target);
+    notifyForgotten(target);
     await closeEntry(entry);
   }
 
@@ -201,6 +208,7 @@ export function createExplorer(deps: ExplorerDeps): Explorer {
     if (cached?.fingerprint === fingerprint) return cached;
     if (cached) {
       cache.delete(target);
+      notifyForgotten(target);
       void closeEntry(cached);
     }
     const entry: CacheEntry = {
@@ -262,5 +270,14 @@ export function createExplorer(deps: ExplorerDeps): Explorer {
     },
 
     forget,
+
+    async resolve(target) {
+      const { config, ctx } = await entryFor(target);
+      return { config, ctx };
+    },
+
+    onForget(listener) {
+      forgetListeners.push(listener);
+    },
   };
 }

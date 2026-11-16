@@ -1,11 +1,16 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import type { EngineId } from "@dpilot/shared";
+import type { EngineId, QueryRequest } from "@dpilot/shared";
 import { generatePassword, isPortFree } from "../cli/runtime.ts";
 import type { ConnectionConfig } from "../connections/types.ts";
 import { createDockerClient } from "../docker/client.ts";
 import { resolveDockerEndpoints } from "../docker/endpoint.ts";
 import { createDockerEngineApi } from "../docker/engine-api.ts";
 import { createInstanceService } from "../instances/service.ts";
+import { bunSessionFactory } from "../query/bun-session.ts";
+import { createQueryService } from "../query/service.ts";
+import type { QueryService } from "../query/types.ts";
+import { openStore } from "../store/database.ts";
+import { createHistoryStore } from "../store/history.ts";
 import { bunSqlFactory } from "./bun-sql.ts";
 import { createAdapter, createDataAdapter } from "./registry.ts";
 import { type DataAdapter, TargetError } from "./types.ts";
@@ -286,6 +291,62 @@ describe.skipIf(process.env.DPILOT_INTEGRATION !== "1")("explorer adapters", () 
         const at = (page.keys ?? []).findIndex((key) => key.id === id);
         return page.rows[at]?.[index];
       };
+
+      const withQuery = async <T>(use: (query: QueryService) => Promise<T>): Promise<T> => {
+        const query = createQueryService({
+          resolve: async () => ({ config: config(), ctx: { managed: true, readOnly: false } }),
+          sessions: bunSessionFactory,
+          history: createHistoryStore(openStore(":memory:")),
+          now: Date.now,
+        });
+        try {
+          return await use(query);
+        } finally {
+          await query.closeAll();
+        }
+      };
+      const TAB = crypto.randomUUID();
+      const runRequest = (sql: string): QueryRequest => ({
+        runId: crypto.randomUUID(),
+        sql,
+        database: null,
+        tab: TAB,
+        maxRows: 1000,
+        confirmed: false,
+      });
+
+      test("cancel stops a long statement within 2 s and the tab still runs", async () => {
+        await withQuery(async (query) => {
+          const sleep = runRequest(
+            fixture.engine === "postgres" ? "SELECT pg_sleep(5)" : "SELECT SLEEP(5)",
+          );
+          const started = Date.now();
+          const pending = query.run("s.it", sleep);
+          await Bun.sleep(500);
+          await query.cancel("s.it", sleep.runId);
+          const cancelled = await pending;
+          expect(Date.now() - started).toBeLessThan(2000);
+          expect(cancelled.stopped).not.toBeNull();
+          const next = await query.run("s.it", runRequest("SELECT 1"));
+          expect(next).toMatchObject({ stopped: null, summary: { succeeded: 1 } });
+        });
+      });
+
+      test("USE and SET persist across runs on one tab", async () => {
+        await withQuery(async (query) => {
+          const [setup, probe] =
+            fixture.engine === "postgres"
+              ? ["SET application_name = 'dpilot_it'", "SHOW application_name"]
+              : [`USE ${DATA_DB}; SET @v = 7`, "SELECT DATABASE(), @v"];
+          await query.run("s.it", runRequest(setup));
+          const result = await query.run("s.it", runRequest(probe));
+          const outcome = result.outcomes[0];
+          if (outcome?.kind !== "rows") throw new Error("expected rows");
+          expect(outcome.rows[0]?.map(String)).toEqual(
+            fixture.engine === "postgres" ? ["dpilot_it"] : [DATA_DB, "7"],
+          );
+        });
+      });
 
       test("pages, sorts and filters rows", async () => {
         await withData(async (adapter) => {

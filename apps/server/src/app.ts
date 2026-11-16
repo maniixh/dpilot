@@ -14,13 +14,22 @@ import { type DockerClient, DockerTimeoutError, DockerUnavailableError } from ".
 import { DataError, TargetError } from "./engines/types.ts";
 import type { Explorer } from "./explorer/types.ts";
 import { InstanceError, type InstanceService } from "./instances/service.ts";
+import type { QueryService } from "./query/types.ts";
 import { catalogRoutes } from "./routes/catalog.ts";
 import { connectionRoutes } from "./routes/connections.ts";
 import { dataRoutes } from "./routes/data.ts";
 import { dockerRoutes } from "./routes/docker.ts";
 import { explorerRoutes } from "./routes/explorer.ts";
 import { healthRoutes } from "./routes/health.ts";
+import { historyRoutes, savedQueryRoutes } from "./routes/history.ts";
 import { instanceRoutes } from "./routes/instances.ts";
+import { queryRoutes } from "./routes/query.ts";
+import {
+  type HistoryStore,
+  SavedQueryError,
+  type SavedQueryErrorCode,
+  type SavedQueryStore,
+} from "./store/types.ts";
 
 export interface AppDeps {
   token: string;
@@ -32,6 +41,9 @@ export interface AppDeps {
   versions: VersionSource;
   connections: ConnectionService;
   explorer: Explorer;
+  query: QueryService;
+  history: HistoryStore;
+  savedQueries: SavedQueryStore;
   /** Serves the web UI; null in dev mode where Vite serves it. */
   staticFiles: Handler | null;
 }
@@ -48,6 +60,9 @@ export function createApp(deps: AppDeps) {
     .get("/targets", async (c) => c.json(await deps.explorer.targets()))
     .route("/c", explorerRoutes(deps.explorer))
     .route("/c", dataRoutes(deps.explorer))
+    .route("/c", queryRoutes(deps.query))
+    .route("/history", historyRoutes(deps.history))
+    .route("/saved-queries", savedQueryRoutes(deps.savedQueries))
     .all("*", (c) => c.json({ error: "not_found" }, 404));
 
   const app = new Hono().use(localRequestGuard()).route("/api", api);
@@ -80,6 +95,11 @@ const TARGET_STATUS = {
   timeout: 504,
 } as const satisfies Record<TargetErrorCode, ContentfulStatusCode>;
 
+const SAVED_QUERY_STATUS = {
+  not_found: 404,
+  name_taken: 409,
+} as const satisfies Record<SavedQueryErrorCode, ContentfulStatusCode>;
+
 const DATA_STATUS = {
   invalid_request: 400,
   read_only: 403,
@@ -106,7 +126,14 @@ function errorResponse(error: Error, c: Context) {
     return c.json({ error: error.code, message: error.message }, TARGET_STATUS[error.code]);
   }
   if (error instanceof DataError) {
-    return c.json({ error: error.code, message: error.message }, DATA_STATUS[error.code]);
+    const body = { error: error.code, message: error.message };
+    return c.json(
+      error.statements === null ? body : { ...body, statements: error.statements },
+      DATA_STATUS[error.code],
+    );
+  }
+  if (error instanceof SavedQueryError) {
+    return c.json({ error: error.code, message: error.message }, SAVED_QUERY_STATUS[error.code]);
   }
   if (error instanceof DockerUnavailableError) {
     return c.json({ error: "docker_unavailable", message: error.message }, 503);

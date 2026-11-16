@@ -120,7 +120,7 @@ async function executeOne(
   return result as SqlResult;
 }
 
-function refuseNonReads(statements: SqlStatement[], dialect: Dialect): void {
+export function refuseNonReads(statements: SqlStatement[], dialect: Dialect): void {
   const refused = statements.find((s) => classifyStatement(s.text, dialect) !== "read");
   if (refused === undefined) return;
   const preview = refused.text.slice(0, 80);

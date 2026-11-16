@@ -5,9 +5,13 @@ import { createConnectionService } from "../connections/service.ts";
 import { createExplorer } from "../explorer/service.ts";
 import type { Explorer } from "../explorer/types.ts";
 import { createInstanceService } from "../instances/service.ts";
+import { createQueryService } from "../query/service.ts";
 import { openStore } from "../store/database.ts";
+import { createHistoryStore } from "../store/history.ts";
+import { createSavedQueryStore } from "../store/saved-queries.ts";
 import type { KeyStore } from "../store/types.ts";
 import { FakeEngineApi } from "./fake-engine-api.ts";
+import { FakeSession } from "./fake-session.ts";
 import { FakeSqlFactory } from "./fake-sql.ts";
 
 export const TEST_TOKEN = "c".repeat(64);
@@ -38,7 +42,10 @@ function memoryKeyStore(): KeyStore {
   };
 }
 
-/** App wired to an in-memory Docker engine and SQL fake; override any dependency per test. */
+/**
+ * App wired to an in-memory Docker engine, SQL fake and fake query sessions (`sessions` lists
+ * the ones opened); override any dependency per test.
+ */
 export function buildTestApp(overrides: Partial<AppDeps> = {}) {
   const engine = new FakeEngineApi();
   const sql = new FakeSqlFactory();
@@ -48,14 +55,32 @@ export function buildTestApp(overrides: Partial<AppDeps> = {}) {
     generatePassword: () => "generated-pw",
   });
   let ids = 0;
+  const db = openStore(":memory:");
   const connections = createConnectionService({
-    db: openStore(":memory:"),
+    db,
     keys: memoryKeyStore(),
     now: () => new Date("2026-11-15T00:00:00Z"),
     randomId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, "0")}`,
     onChanged: (id) => void explorer.forget(`c.${id}`),
   });
   const explorer: Explorer = createExplorer({ instances, connections, sql: sql.factory });
+  const sessions: { session: FakeSession; database: string | null }[] = [];
+  const history = createHistoryStore(db);
+  const savedQueries = createSavedQueryStore(db, {
+    now: () => new Date("2026-11-15T00:00:00Z"),
+    randomId: () => crypto.randomUUID(),
+  });
+  const query = createQueryService({
+    resolve: (target) => explorer.resolve(target),
+    sessions: async (_config, database) => {
+      const session = new FakeSession();
+      sessions.push({ session, database });
+      return session;
+    },
+    history,
+    now: () => 61_500,
+  });
+  explorer.onForget((target) => void query.closeTarget(target));
   const deps: AppDeps = {
     token: TEST_TOKEN,
     version: "0.1.0",
@@ -68,8 +93,11 @@ export function buildTestApp(overrides: Partial<AppDeps> = {}) {
     },
     connections,
     explorer,
+    query,
+    history,
+    savedQueries,
     staticFiles: null,
     ...overrides,
   };
-  return { app: createApp(deps), engine, sql, deps };
+  return { app: createApp(deps), engine, sql, sessions, deps };
 }

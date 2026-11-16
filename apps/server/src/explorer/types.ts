@@ -1,4 +1,5 @@
 import type { ConnectionTestRequest, TargetId, TargetsResponse, TestResult } from "@dpilot/shared";
+import type { ConnectionConfig } from "../connections/types.ts";
 import type { AdapterContext, DataAdapter, ExplorerAdapter } from "../engines/types.ts";
 
 export interface Explorer {
@@ -15,4 +16,8 @@ export interface Explorer {
   test(request: ConnectionTestRequest): Promise<TestResult>;
   /** Closes and drops the target's cached adapters, if any. */
   forget(target: TargetId): Promise<void>;
+  /** The target's connection settings and context, for sessions that manage their own client. */
+  resolve(target: TargetId): Promise<{ config: ConnectionConfig; ctx: AdapterContext }>;
+  /** Called whenever a target's cached adapters are dropped: forgotten, or its config changed. */
+  onForget(listener: (target: TargetId) => void): void;
 }

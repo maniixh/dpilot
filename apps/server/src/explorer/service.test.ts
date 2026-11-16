@@ -227,6 +227,30 @@ test("forget closes the data adapter too", async () => {
   expect(sql.closed).toHaveLength(2);
 });
 
+test("resolve returns the target's config and context", async () => {
+  const saved = await connections.create({ ...input, readOnly: true });
+  const { config, ctx } = await explorer.resolve(`c.${saved.id}`);
+  expect(config).toMatchObject({ host: "db.example.com", readOnly: true });
+  expect(ctx).toEqual({ managed: false, readOnly: true });
+  await expect(explorer.resolve("c.missing")).rejects.toMatchObject({
+    code: "target_not_found",
+  });
+});
+
+test("forget and a changed config notify listeners", async () => {
+  const saved = await connections.create(input);
+  const target = `c.${saved.id}`;
+  const forgotten: string[] = [];
+  explorer.onForget((id) => forgotten.push(id));
+  await explorer.resolve(target);
+  await explorer.forget(target);
+  expect(forgotten).toEqual([target]);
+  await explorer.resolve(target);
+  await connections.update(saved.id, { readOnly: true });
+  await explorer.resolve(target);
+  expect(forgotten).toEqual([target, target]);
+});
+
 test("test reports a failure as a result", async () => {
   sql.respond(/VERSION/, driverError({ errno: 1045 }));
   expect(await explorer.test(input)).toEqual({

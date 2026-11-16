@@ -1,6 +1,7 @@
 import type {
   AggregateRequest,
   AggregateResult,
+  ConfirmationRequired,
   CountRequest,
   DatabaseEntry,
   DataErrorCode,
@@ -88,6 +89,8 @@ export class DataError extends Error {
   constructor(
     readonly code: DataErrorCode,
     message: string,
+    /** Set on `confirmation_required`: the statements that need confirming. */
+    readonly statements: ConfirmationRequired["statements"] | null = null,
   ) {
     super(message);
   }
