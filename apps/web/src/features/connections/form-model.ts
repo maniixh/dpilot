@@ -23,6 +23,7 @@ export interface FormValues {
   ca: string;
   /** Editing only: remove the saved password instead of keeping it. */
   clearPassword: boolean;
+  readOnly: boolean;
 }
 
 export function emptyForm(engine: EngineId): FormValues {
@@ -38,6 +39,7 @@ export function emptyForm(engine: EngineId): FormValues {
     tlsMode: "off",
     ca: "",
     clearPassword: false,
+    readOnly: false,
   };
 }
 
@@ -53,6 +55,7 @@ export function fromSaved(saved: SavedConnection): FormValues {
     tlsMode: saved.tls.mode,
     ca: saved.tls.ca ?? "",
     clearPassword: false,
+    readOnly: saved.readOnly,
   };
 }
 
@@ -92,6 +95,7 @@ export function toInput(values: FormValues): ConnectionInput {
     password: values.password === "" ? null : values.password,
     database: databaseOf(values),
     tls: tlsOf(values),
+    readOnly: values.readOnly,
   };
 }
 
@@ -108,6 +112,7 @@ export function toPatch(values: FormValues, saved: SavedConnection): ConnectionP
   else if (values.clearPassword && (saved.hasPassword || saved.passwordLost)) patch.password = null;
   if (input.database !== saved.database) patch.database = input.database;
   if (input.tls.mode !== saved.tls.mode || input.tls.ca !== saved.tls.ca) patch.tls = input.tls;
+  if (input.readOnly !== saved.readOnly) patch.readOnly = input.readOnly;
   return patch;
 }
 

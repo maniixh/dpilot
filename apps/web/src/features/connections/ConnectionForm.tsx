@@ -196,6 +196,23 @@ export function ConnectionForm({
         </Field>
       )}
 
+      <label className="flex max-w-prose items-start gap-3">
+        <input
+          type="checkbox"
+          checked={values.readOnly}
+          onChange={(e) => update({ readOnly: e.target.checked })}
+          aria-describedby="read-only-hint"
+          className="mt-1 size-4 accent-ink"
+        />
+        <span>
+          <span className="font-medium">Read-only</span>
+          <span id="read-only-hint" className="mt-1 block text-slate">
+            Refuses changes from the grid and the SQL editor. For real protection, use a database
+            user that can only read.
+          </span>
+        </span>
+      </label>
+
       <TestOutcome result={test.data} error={test.error} />
 
       {saveError !== null && (

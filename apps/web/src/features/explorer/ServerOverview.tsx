@@ -6,6 +6,7 @@ import { buttonClass } from "../../ui/button.ts";
 import { Fact, Facts } from "../../ui/Facts.tsx";
 import { inputClass } from "../../ui/form.tsx";
 import { filterVariables, findTarget, formatUptime, type TargetLookup } from "./overview-model.ts";
+import { editorHref } from "./paths.ts";
 import { errorText } from "./Sidebar.tsx";
 
 export type TargetState =
@@ -78,14 +79,19 @@ export function ServerOverview({ target }: { target: string }) {
               : "\u00a0"
         }
       >
-        {summary?.kind === "connection" && (
-          <Link
-            href={`/connections/${encodeURIComponent(target.slice(2))}/edit`}
-            className={`${buttonClass.secondary} mt-6`}
-          >
-            Edit connection
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Link href={editorHref(target, null)} className={buttonClass.secondary}>
+            Open SQL editor
           </Link>
-        )}
+          {summary?.kind === "connection" && (
+            <Link
+              href={`/connections/${encodeURIComponent(target.slice(2))}/edit`}
+              className={buttonClass.secondary}
+            >
+              Edit connection
+            </Link>
+          )}
+        </div>
       </OverviewHeader>
 
       {info.data === undefined ? (

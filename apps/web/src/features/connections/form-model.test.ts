@@ -70,7 +70,19 @@ describe("form model", () => {
       password: null,
       database: null,
       tls: { mode: "off", ca: null },
+      readOnly: false,
     });
+  });
+
+  test("form-model keeps readOnly through toPatch", () => {
+    const values = fromSaved({ ...saved, readOnly: true });
+    expect(values.readOnly).toBe(true);
+    expect(toPatch(values, { ...saved, readOnly: true })).toEqual({});
+    expect(toPatch({ ...values, readOnly: false }, { ...saved, readOnly: true })).toEqual({
+      readOnly: false,
+    });
+    expect(toPatch({ ...fromSaved(saved), readOnly: true }, saved)).toEqual({ readOnly: true });
+    expect(toInput({ ...emptyForm("mysql"), label: "L", readOnly: true }).readOnly).toBe(true);
   });
 
   test("toInput drops the CA unless verifying", () => {

@@ -1,6 +1,8 @@
 import { getEngine, type ObjectGroups } from "@dpilot/shared";
+import { Link } from "wouter";
 import { useObjects, useSchemas } from "../../api/explorer.ts";
-import { targetHref } from "./paths.ts";
+import { buttonClass } from "../../ui/button.ts";
+import { editorHref, tableHref, targetHref } from "./paths.ts";
 import { ErrorLine, OverviewHeader, useTarget } from "./ServerOverview.tsx";
 
 const GROUPS = [
@@ -24,7 +26,11 @@ export function DatabaseOverview({ target, db }: { target: string; db: string })
         title={db}
         subline={summary === undefined ? label : `${getEngine(summary.engine).label} on ${label}`}
         back={{ href: targetHref(target), label: `Back to ${label}` }}
-      />
+      >
+        <Link href={editorHref(target, db)} className={`${buttonClass.secondary} mt-6`}>
+          Open SQL editor
+        </Link>
+      </OverviewHeader>
       {state.status === "loading" ? (
         <p className="text-slate">Loading…</p>
       ) : state.status === "error" ? (
@@ -79,10 +85,20 @@ function Objects({ target, db, schema }: { target: string; db: string; schema: s
       <ErrorLine error={objects.error} onRetry={() => void objects.refetch()} />
     );
   }
-  return <Groups groups={objects.data} />;
+  return <Groups target={target} db={db} schema={schema} groups={objects.data} />;
 }
 
-function Groups({ groups }: { groups: ObjectGroups }) {
+function Groups({
+  target,
+  db,
+  schema,
+  groups,
+}: {
+  target: string;
+  db: string;
+  schema: string | null;
+  groups: ObjectGroups;
+}) {
   return (
     <div className="grid gap-10 sm:grid-cols-2">
       {GROUPS.map((group) => (
@@ -97,7 +113,16 @@ function Groups({ groups }: { groups: ObjectGroups }) {
             <ul className="divide-y divide-rule">
               {groups[group.key].map((name) => (
                 <li key={name} className="py-2 font-mono text-sm break-all">
-                  {name}
+                  {group.key === "tables" || group.key === "views" ? (
+                    <Link
+                      href={tableHref(target, db, schema, name)}
+                      className="underline-offset-4 hover:underline"
+                    >
+                      {name}
+                    </Link>
+                  ) : (
+                    name
+                  )}
                 </li>
               ))}
             </ul>

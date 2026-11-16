@@ -10,6 +10,15 @@ const keys = {
 
 const param = (id: string) => ({ param: { id: encodeURIComponent(id) } });
 
+export function useConnections(enabled: boolean) {
+  return useQuery({
+    queryKey: keys.connections,
+    queryFn: () => unwrap(api.connections.$get()),
+    enabled,
+    retry: retryUnlessClientError,
+  });
+}
+
 export function useConnection(id: string) {
   return useQuery({
     queryKey: keys.connection(id),

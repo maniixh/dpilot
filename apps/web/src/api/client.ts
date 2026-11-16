@@ -40,7 +40,7 @@ export async function unwrapEmpty(response: Promise<ClientResponse<unknown>>): P
   if (!res.ok) throw await toApiError(res);
 }
 
-async function toApiError(res: ClientResponse<unknown>): Promise<ApiError> {
+export async function toApiError(res: ClientResponse<unknown>): Promise<ApiError> {
   const body: unknown = await res.json().catch(() => null);
   if (typeof body !== "object" || body === null) return new ApiError(res.status, null, null);
   const { error, message } = body as { error?: unknown; message?: unknown };

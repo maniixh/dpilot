@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useState } from "react";
 import { Link, Route, Switch, useLocation } from "wouter";
 import { ApiError } from "./api/client.ts";
 import { useDockerStatus, useHealth } from "./api/status.ts";
@@ -6,6 +6,7 @@ import {
   EditConnectionScreen,
   NewConnectionScreen,
 } from "./features/connections/ConnectionScreens.tsx";
+import { TableScreen } from "./features/data/TableScreen.tsx";
 import { DatabaseOverview } from "./features/explorer/DatabaseOverview.tsx";
 import { parseExplorerPath } from "./features/explorer/paths.ts";
 import { ServerOverview } from "./features/explorer/ServerOverview.tsx";
@@ -17,6 +18,10 @@ import { StatusScreen } from "./features/status/StatusScreen.tsx";
 import { shellView } from "./features/status/shell.ts";
 import { type SessionState, useSession } from "./session/use-session.ts";
 import { useMediaQuery } from "./ui/use-media-query.ts";
+
+const EditorScreen = lazy(() =>
+  import("./features/sql/EditorScreen.tsx").then((module) => ({ default: module.EditorScreen })),
+);
 
 export function App() {
   const session = useSession();
@@ -103,8 +108,30 @@ function ExplorerScreen() {
   useLocation();
   const path = parseExplorerPath(window.location.pathname);
   if (path === null) return <NotFound />;
-  if (path.db === null) return <ServerOverview key={path.target} target={path.target} />;
-  return <DatabaseOverview key={`${path.target}/${path.db}`} target={path.target} db={path.db} />;
+  switch (path.kind) {
+    case "target":
+      return <ServerOverview key={path.target} target={path.target} />;
+    case "database":
+      return (
+        <DatabaseOverview key={`${path.target}/${path.db}`} target={path.target} db={path.db} />
+      );
+    case "table":
+      return (
+        <TableScreen
+          key={JSON.stringify([path.target, path.db, path.schema, path.table])}
+          target={path.target}
+          db={path.db}
+          schema={path.schema}
+          table={path.table}
+        />
+      );
+    case "editor":
+      return (
+        <Suspense fallback={<p className="text-slate">Loading…</p>}>
+          <EditorScreen key={`${path.target}/${path.db}`} target={path.target} db={path.db} />
+        </Suspense>
+      );
+  }
 }
 
 function NotFound() {

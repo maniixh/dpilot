@@ -2,8 +2,9 @@ import { type DatabaseEntry, type EngineId, getEngine, type TargetSummary } from
 import type { ReactNode } from "react";
 import { Link } from "wouter";
 import { ApiError } from "../../api/client.ts";
+import { useConnections } from "../../api/connections.ts";
 import { useDatabases, useObjects, useSchemas, useTargets } from "../../api/explorer.ts";
-import { databaseHref, targetHref } from "./paths.ts";
+import { databaseHref, editorHref, tableHref, targetHref } from "./paths.ts";
 import { Tree, TreeEmpty, TreeNode, TreeStatus } from "./TreeNode.tsx";
 import { nodeId } from "./tree-model.ts";
 
@@ -84,7 +85,7 @@ export function Sidebar() {
         ) : data.connections.length === 0 ? (
           <p className="text-sm text-slate">No saved connections.</p>
         ) : (
-          <TargetTree label="Connections" targets={data.connections} />
+          <TargetTree label="Connections" targets={data.connections} readOnlyAware />
         )}
       </section>
     </nav>
@@ -104,18 +105,45 @@ function SectionStatus({ query }: { query: LevelQuery }) {
   );
 }
 
-function TargetTree({ label, targets }: { label: string; targets: readonly TargetSummary[] }) {
+function TargetTree({
+  label,
+  targets,
+  readOnlyAware = false,
+}: {
+  label: string;
+  targets: readonly TargetSummary[];
+  /** Saved connections can be read-only; the list that says so is fetched only for them. */
+  readOnlyAware?: boolean;
+}) {
+  const connections = useConnections(readOnlyAware);
+  const readOnlyIds = new Set(
+    (connections.data ?? []).filter((saved) => saved.readOnly).map((saved) => `c.${saved.id}`),
+  );
   return (
     <Tree label={label}>
       {targets.map((target, index) => (
-        <TargetNode key={target.id} target={target} first={index === 0} />
+        <TargetNode
+          key={target.id}
+          target={target}
+          first={index === 0}
+          readOnly={readOnlyIds.has(target.id)}
+        />
       ))}
     </Tree>
   );
 }
 
-function TargetNode({ target, first }: { target: TargetSummary; first: boolean }) {
+function TargetNode({
+  target,
+  first,
+  readOnly,
+}: {
+  target: TargetSummary;
+  first: boolean;
+  readOnly: boolean;
+}) {
   const id = nodeId([target.id]);
+  const engineLabel = getEngine(target.engine).label;
   return (
     <TreeNode
       id={id}
@@ -123,7 +151,9 @@ function TargetNode({ target, first }: { target: TargetSummary; first: boolean }
       label={target.label}
       href={targetHref(target.id)}
       expandable={target.available}
-      hint={target.available ? getEngine(target.engine).label : target.reason}
+      hint={
+        target.available ? (readOnly ? `${engineLabel} · Read-only` : engineLabel) : target.reason
+      }
     >
       <Databases target={target.id} engine={target.engine} />
     </TreeNode>
@@ -174,6 +204,12 @@ function DatabaseNode({
       expandable={db.browsable}
       hint={db.browsable ? undefined : "Can't open"}
     >
+      <TreeNode
+        id={nodeId([target, "db", db.name, "query"])}
+        label="SQL editor"
+        href={editorHref(target, db.name)}
+        expandable={false}
+      />
       {engine === "postgres" ? (
         <Schemas target={target} db={db.name} />
       ) : (
@@ -235,6 +271,11 @@ function Objects({ target, db, schema }: { target: string; db: string; schema: s
                 key={name}
                 id={nodeId([...base, kind.key, name])}
                 label={name}
+                href={
+                  kind.key === "tables" || kind.key === "views"
+                    ? tableHref(target, db, schema, name)
+                    : undefined
+                }
                 expandable={false}
               />
             ))}
