@@ -37,6 +37,23 @@ test("stores redacted SQL", () => {
   expect(stored.sql).not.toContain("pw");
 });
 
+test("hides a secret quoted in the driver error", () => {
+  const error =
+    "You have an error in your SQL syntax; check the manual near 'CREAT USER bob " +
+    "IDENTIFIED BY 'hunter2'' at line 1";
+  const added = store.add(entry({ outcome: "error", error }));
+  expect(added.error).not.toContain("hunter2");
+  const stored = db.query("SELECT error FROM query_history").get() as { error: string };
+  expect(stored.error).not.toContain("hunter2");
+});
+
+test("keeps an error without secrets and caps its length", () => {
+  expect(store.add(entry({ outcome: "error", error: "Unknown column 'x'" })).error).toBe(
+    "Unknown column 'x'",
+  );
+  expect(store.add(entry({ outcome: "error", error: "e".repeat(5000) })).error).toHaveLength(2000);
+});
+
 test("truncates SQL to 100000 characters", () => {
   const added = store.add(entry({ sql: `SELECT '${"x".repeat(200_000)}'` }));
   expect(added.sql.length).toBe(100_000);

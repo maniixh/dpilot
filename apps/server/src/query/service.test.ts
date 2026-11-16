@@ -18,13 +18,15 @@ interface Options {
   engine?: EngineId;
   failOpen?: boolean;
   session?: FakeSession;
+  /** Sessions handed out in order, one per open. */
+  queue?: FakeSession[];
 }
 
 function setup(options: Options = {}) {
   const opened: { session: FakeSession; database: string | null }[] = [];
   const factory: SqlSessionFactory = async (_config, database) => {
     if (options.failOpen) throw driverError({ code: "ECONNREFUSED" }, "connect failed");
-    const session = options.session ?? new FakeSession();
+    const session = options.queue?.shift() ?? options.session ?? new FakeSession();
     opened.push({ session, database });
     return session;
   };
@@ -239,6 +241,35 @@ describe("QueryService", () => {
     expect(opened.map((o) => o.database)).toEqual(["a", "b"]);
     expect(opened[0]?.session.closed).toBe(true);
     expect(opened[1]?.session.closed).toBe(false);
+  });
+
+  test("drops a session whose connection was lost and opens a new one next run", async () => {
+    const dead = new FakeSession();
+    const fresh = new FakeSession();
+    const { service, opened } = setup({ queue: [dead, fresh] });
+    dead.respond(
+      /SELECT 1/,
+      Object.assign(new Error("Connection closed"), { code: "ERR_MYSQL_CONNECTION_CLOSED" }),
+    );
+    const first = await service.run(TARGET, request("SELECT 1; SELECT 2"));
+    expect(first.stopped).toBe("error");
+    const failed = first.outcomes[0];
+    expect(failed?.kind === "error" ? failed.message : "").toContain("new session");
+    expect(dead.closed).toBe(true);
+    const second = await service.run(TARGET, request("SELECT 3"));
+    expect(second.stopped).toBeNull();
+    expect(opened).toHaveLength(2);
+    expect(fresh.executed).toEqual(["SELECT 3"]);
+  });
+
+  test("keeps a session after an ordinary statement error", async () => {
+    const session = new FakeSession();
+    const { service, opened } = setup({ session });
+    session.respond(/SELEC /, Object.assign(new Error("syntax"), { errno: 1064 }));
+    await service.run(TARGET, request("SELEC 1"));
+    await service.run(TARGET, request("SELECT 1"));
+    expect(opened).toHaveLength(1);
+    expect(session.closed).toBe(false);
   });
 
   test("closes idle sessions", async () => {

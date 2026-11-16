@@ -8,9 +8,13 @@ import {
   type StatementOutcome,
 } from "@dpilot/shared";
 import { encodeCell } from "../engines/cells.ts";
+import { isConnectionLost } from "../engines/errors.ts";
 import { DataError, type SqlResult } from "../engines/types.ts";
 import type { SqlSession } from "./types.ts";
 
+const LOST_NOTE =
+  "The connection to the server was lost; the next run will use a new session, so variables " +
+  "and temporary tables are gone.";
 const KEPT_AT_EACH_END = 50;
 const MAX_OUTCOME_SQL_CHARS = 2000;
 const READ_ONLY_BEGIN = { mysql: "START TRANSACTION READ ONLY", postgres: "BEGIN READ ONLY" };
@@ -22,6 +26,8 @@ export interface RunOptions {
   /** Polled before each statement; once true nothing further starts. */
   isCancelled: () => boolean;
   now: () => number;
+  /** Called when a statement fails because the connection itself is gone. */
+  onConnectionLost?: () => void;
 }
 
 type Outcome = StatementOutcome;
@@ -158,7 +164,9 @@ export async function runScript(
       if (outcome.kind === "affected") summary.affected += outcome.affected;
       window.add(outcome);
     } catch (error) {
-      const message = errorMessage(error);
+      const lost = isConnectionLost(error);
+      if (lost) options.onConnectionLost?.();
+      const message = lost ? `${errorMessage(error)}. ${LOST_NOTE}` : errorMessage(error);
       window.add({ ...base(), kind: "error", message, position: errorPosition(error) });
       stopped = options.isCancelled() ? "cancelled" : "error";
       break;

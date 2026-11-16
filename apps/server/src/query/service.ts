@@ -182,6 +182,7 @@ export function createQueryService(deps: QueryServiceDeps): QueryService {
     active.session = session;
 
     let result: Omit<QueryRun, "runId">;
+    let lost = false;
     try {
       result = await runScript(session, statements, {
         maxRows: request.maxRows,
@@ -189,6 +190,9 @@ export function createQueryService(deps: QueryServiceDeps): QueryService {
         dialect: dialectOf(config),
         isCancelled: () => active.cancelled,
         now: deps.now,
+        onConnectionLost: () => {
+          lost = true;
+        },
       });
     } catch (error) {
       if (entry.session === session) entry.session = null;
@@ -197,6 +201,10 @@ export function createQueryService(deps: QueryServiceDeps): QueryService {
     } finally {
       if (entry.run === active) entry.run = null;
       entry.lastUsed = deps.now();
+    }
+    if (lost) {
+      if (entry.session === session) entry.session = null;
+      await session.close().catch(ignore);
     }
     // The tab is free, but the answer waits for the kill so the caller sees a settled server.
     if (active.cancelSettled !== null) await active.cancelSettled.catch(ignore);

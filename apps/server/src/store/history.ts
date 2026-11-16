@@ -4,6 +4,17 @@ import { z } from "zod";
 import type { HistoryStore } from "./types.ts";
 
 const MAX_SQL_CHARS = 100_000;
+const MAX_ERROR_CHARS = 2000;
+const HIDDEN_ERROR = "The statement failed; details hidden because it contained a secret.";
+// Drivers quote the failing SQL inside the message, which can wrap a secret in extra quotes that
+// `redactSql` cannot tokenise; any mention of a credential clause hides the whole message.
+const SECRET_CLAUSE = /\bidentified\b|\b\w*password\b(?!\s*:\s*(?:yes|no)\b)/i;
+
+function safeError(error: string | null): string | null {
+  if (error === null) return null;
+  if (redactSql(error) !== error || SECRET_CLAUSE.test(error)) return HIDDEN_ERROR;
+  return error.slice(0, MAX_ERROR_CHARS);
+}
 
 const rowSchema = z.object({
   id: z.number().int(),
@@ -58,7 +69,7 @@ export function createHistoryStore(db: Database, options: { max?: number } = {})
             entry.outcome,
             entry.statements,
             entry.rowsAffected,
-            entry.error,
+            safeError(entry.error),
           );
         db.run(
           `DELETE FROM query_history

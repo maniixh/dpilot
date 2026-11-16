@@ -23,6 +23,9 @@ function fieldsOf(error: unknown): DriverFields {
 const AUTH_ERRNOS = new Set<string | number>(["28P01", "28000", 1045]);
 const DENIED_ERRNOS = new Set<string | number>(["42501", 1044, 1227]);
 const UNREACHABLE_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ECONNRESET"]);
+// MySQL: server gone away, lost during query, connection killed. Postgres: admin/crash/cold shutdown.
+const LOST_MYSQL_ERRNOS = new Set([2006, 2013, 1927]);
+const LOST_POSTGRES_STATES = new Set(["57P01", "57P02", "57P03"]);
 
 /** Turns a Bun.SQL (or socket) failure into a TargetError with a plain message. */
 export function classifyError(
@@ -51,6 +54,14 @@ export function classifyError(
     return new TargetError("tls_failed", `The TLS handshake failed: ${message}`);
   }
   return new TargetError("query_failed", message);
+}
+
+/** True when the failure means the pinned connection is gone, so the session cannot be reused. */
+export function isConnectionLost(error: unknown): boolean {
+  const { code, errno } = fieldsOf(error);
+  if (/CONNECTION_CLOSED|LOST_CONNECTION|^(ECONNRESET|EPIPE)$/i.test(code)) return true;
+  if (typeof errno === "number") return LOST_MYSQL_ERRNOS.has(errno);
+  return errno !== null && (errno.startsWith("08") || LOST_POSTGRES_STATES.has(errno));
 }
 
 /** True when the server refused a catalog query for lack of privileges. */
