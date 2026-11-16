@@ -20,6 +20,7 @@ interface Options {
   session?: FakeSession;
   /** Sessions handed out in order, one per open. */
   queue?: FakeSession[];
+  configDatabase?: string | null;
 }
 
 function setup(options: Options = {}) {
@@ -38,7 +39,7 @@ function setup(options: Options = {}) {
     port: 3306,
     username: "app",
     password: "pw",
-    database: null,
+    database: options.configDatabase ?? null,
     tls: { mode: "off", ca: null },
     readOnly: options.readOnly ?? false,
   };
@@ -93,6 +94,18 @@ describe("QueryService", () => {
     expect(statements?.[0]).toMatchObject({ index: 0, sql: "DELETE FROM t" });
     expect(statements?.[0]?.reasons.length).toBeGreaterThan(0);
     expect(opened).toHaveLength(0);
+  });
+
+  test("opens a null-database tab on the connection's database", async () => {
+    const withConfig = setup({ configDatabase: "appdb" });
+    await withConfig.service.run(TARGET, request("SELECT 1", { database: null }));
+    expect(withConfig.opened[0]?.database).toBe("appdb");
+  });
+
+  test("opens a null-database Postgres tab on postgres when nothing is configured", async () => {
+    const { service, opened } = setup({ engine: "postgres" });
+    await service.run(TARGET, request("SELECT 1", { database: null }));
+    expect(opened[0]?.database).toBe("postgres");
   });
 
   test("runs once confirmed", async () => {

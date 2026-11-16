@@ -20,9 +20,10 @@ interface Reserved {
 async function cancelFromSecondConnection(
   config: ConnectionConfig,
   backendId: number,
+  database: string | null,
 ): Promise<void> {
   if (!Number.isSafeInteger(backendId)) throw new Error("Invalid connection id.");
-  const canceller = new SQL(sqlOptions(config, null, 1));
+  const canceller = new SQL(sqlOptions(config, database, 1));
   try {
     if (config.engine === "postgres") {
       await canceller.unsafe("SELECT pg_cancel_backend($1)", [backendId]);
@@ -50,6 +51,7 @@ class BunSession implements SqlSession {
     private readonly sql: SQL,
     private readonly reserved: Reserved,
     private readonly backendId: number,
+    private readonly database: string | null,
   ) {}
 
   async execute(text: string): Promise<SqlResult> {
@@ -66,7 +68,7 @@ class BunSession implements SqlSession {
 
   cancel(): Promise<void> {
     if (!this.running) return Promise.resolve();
-    const settled = cancelFromSecondConnection(this.config, this.backendId);
+    const settled = cancelFromSecondConnection(this.config, this.backendId, this.database);
     this.pendingCancel = settled;
     return settled;
   }
@@ -79,11 +81,14 @@ class BunSession implements SqlSession {
 }
 
 /** One pinned connection per session, so `USE`, `SET` and transactions persist. */
-export const bunSessionFactory: SqlSessionFactory = async (config, database) => {
+/** Opens the session on `database`; a null Postgres database falls back to `postgres`. */
+export const bunSessionFactory: SqlSessionFactory = async (config, requested) => {
+  const database = requested ?? (config.engine === "postgres" ? "postgres" : null);
   const sql = new SQL(sqlOptions(config, database, 1));
   try {
     const reserved = (await sql.reserve()) as unknown as Reserved;
-    return new BunSession(config, sql, reserved, await backendId(config, reserved));
+    const id = await backendId(config, reserved);
+    return new BunSession(config, sql, reserved, id, database);
   } catch (error) {
     await sql.close();
     throw error;

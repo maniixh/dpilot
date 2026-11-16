@@ -124,7 +124,9 @@ export function createQueryService(deps: QueryServiceDeps): QueryService {
       entry.session = null;
       await stale.close().catch(ignore);
     }
-    const session = await deps.sessions(config, database);
+    const effective =
+      database ?? config.database ?? (config.engine === "postgres" ? "postgres" : null);
+    const session = await deps.sessions(config, effective);
     if (entry.closed) {
       await session.close().catch(ignore);
       throw new DataError("invalid_request", "This tab was closed.");

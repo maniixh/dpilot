@@ -163,6 +163,10 @@ export async function runScript(
       summary.succeeded += 1;
       if (outcome.kind === "affected") summary.affected += outcome.affected;
       window.add(outcome);
+      if (options.isCancelled()) {
+        stopped = "cancelled";
+        break;
+      }
     } catch (error) {
       const lost = isConnectionLost(error);
       if (lost) options.onConnectionLost?.();

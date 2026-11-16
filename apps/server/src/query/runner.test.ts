@@ -174,6 +174,15 @@ describe("runScript", () => {
     expect(result.stopped).toBe("cancelled");
   });
 
+  test("marks the run cancelled when the last statement is interrupted but returns normally", async () => {
+    const session = new FakeSession();
+    const result = await run(session, "SELECT SLEEP(5)", {
+      isCancelled: () => session.executed.length >= 1,
+    });
+    expect(session.executed).toEqual(["SELECT SLEEP(5)"]);
+    expect(result.stopped).toBe("cancelled");
+  });
+
   test("marks the run cancelled when the in-flight statement fails after a cancel", async () => {
     const session = new FakeSession();
     session.respond(/^SELECT 2$/, new Error("Query execution was interrupted"));
