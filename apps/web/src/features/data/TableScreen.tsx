@@ -1,5 +1,5 @@
 import { type Filter, getEngine, type RowsQuery, type Sort } from "@dpilot/shared";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useRowCount, useRows, useTableMeta } from "../../api/data.ts";
 import { buttonClass } from "../../ui/button.ts";
@@ -46,6 +46,7 @@ export function TableScreen({ target, db, schema, table }: TableScreenProps) {
   const [active, setActive] = useState<ActiveCell | null>(null);
   const searchId = useId();
   const sizeId = useId();
+  const gridArea = useRef<HTMLDivElement>(null);
 
   const settled = useDebounced(searchText.trim(), SEARCH_DELAY_MS);
   const search = settled === "" ? null : settled;
@@ -57,6 +58,27 @@ export function TableScreen({ target, db, schema, table }: TableScreenProps) {
     setActive(null);
   }, [sort, filters, search, limit]);
 
+  const panelOpen = active !== null;
+  // Esc closes the value panel from the grid or from inside the panel itself.
+  useEffect(() => {
+    if (!panelOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (
+        event.key !== "Escape" ||
+        !(event.target instanceof Node && gridArea.current?.contains(event.target))
+      )
+        return;
+      event.preventDefault();
+      closePanel();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [panelOpen]);
+
+  function closePanel() {
+    setActive(null);
+    gridArea.current?.querySelector<HTMLElement>('[role="grid"]')?.focus();
+  }
   const query: RowsQuery = { ref, filters, search, sort, offset, limit };
   const rows = useRows(target, db, query, ready);
   const count = useRowCount(target, db, { ref, filters, search }, ready);
@@ -102,7 +124,7 @@ export function TableScreen({ target, db, schema, table }: TableScreenProps) {
         )
       ) : (
         <>
-          <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+          <div className="flex flex-wrap items-end gap-x-4 gap-y-3 lg:flex-nowrap">
             <div className="flex min-w-48 flex-1 flex-col gap-1 sm:max-w-sm">
               <label htmlFor={searchId} className="text-sm font-medium">
                 Search
@@ -143,7 +165,7 @@ export function TableScreen({ target, db, schema, table }: TableScreenProps) {
                 ))}
               </select>
             </div>
-            <nav aria-label="Pages" className="flex items-center gap-3 sm:ml-auto">
+            <nav aria-label="Pages" className="flex shrink-0 items-center gap-3 sm:ml-auto">
               <p aria-live="polite" className="font-mono text-sm">
                 {pageLabel(offset, total, pageRows.length)}
               </p>
@@ -182,7 +204,7 @@ export function TableScreen({ target, db, schema, table }: TableScreenProps) {
               {pageRows.length === 0 ? (
                 <EmptyRows narrowed={narrowed} offset={offset} onClear={clearNarrowing} />
               ) : (
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                <div ref={gridArea} className="flex flex-col gap-4 lg:flex-row lg:items-start">
                   <div className="min-w-0 flex-1">
                     <DataGrid
                       columns={columns}
@@ -197,19 +219,15 @@ export function TableScreen({ target, db, schema, table }: TableScreenProps) {
                       busy={rows.isFetching}
                     />
                   </div>
-                  <aside
-                    className={
-                      "border border-rule bg-white/50 p-4 lg:sticky lg:top-8 lg:w-80 lg:shrink-0"
-                    }
-                  >
-                    {activeColumn !== undefined && activeValue !== undefined ? (
-                      <ValuePanel column={activeColumn} value={activeValue} />
-                    ) : (
-                      <p className="text-sm text-slate">
-                        Select a cell to read its full value. Arrow keys move between cells.
-                      </p>
-                    )}
-                  </aside>
+                  {activeColumn !== undefined && activeValue !== undefined && (
+                    <aside
+                      className={
+                        "border border-rule bg-white/50 p-4 lg:sticky lg:top-8 lg:w-96 lg:shrink-0"
+                      }
+                    >
+                      <ValuePanel column={activeColumn} value={activeValue} onClose={closePanel} />
+                    </aside>
+                  )}
                 </div>
               )}
               <AggregateBar

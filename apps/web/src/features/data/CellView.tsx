@@ -1,4 +1,5 @@
 import type { CellValue, ColumnMeta } from "@dpilot/shared";
+import { buttonClass } from "../../ui/button.ts";
 import { CopyButton } from "../../ui/CopyButton.tsx";
 import { formatCell } from "./grid-model.ts";
 
@@ -14,7 +15,8 @@ function copyText(value: CellValue): string {
 }
 
 /** The full value of the active cell, which the grid itself only shows clipped. */
-export function ValuePanel({ column, value }: { column: ColumnMeta; value: CellValue }) {
+export function ValuePanel(props: { column: ColumnMeta; value: CellValue; onClose: () => void }) {
+  const { column, value, onClose } = props;
   return (
     <section aria-label="Cell value" className="flex min-w-0 flex-col gap-3 text-sm">
       <header className="flex items-baseline justify-between gap-3">
@@ -22,7 +24,14 @@ export function ValuePanel({ column, value }: { column: ColumnMeta; value: CellV
           <h2 className="font-mono text-base font-semibold break-all">{column.name}</h2>
           <p className="font-mono text-xs text-slate">{column.type}</p>
         </div>
-        {value !== null && <CopyButton value={copyText(value)} label={`value of ${column.name}`} />}
+        <div className="flex items-baseline gap-3">
+          {value !== null && (
+            <CopyButton value={copyText(value)} label={`value of ${column.name}`} />
+          )}
+          <button type="button" onClick={onClose} className={buttonClass.quiet}>
+            Close
+          </button>
+        </div>
       </header>
       {value === null ? (
         <p className="text-slate italic">NULL</p>

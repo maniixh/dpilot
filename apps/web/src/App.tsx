@@ -40,7 +40,11 @@ export function App() {
   }, [dockerRunning]);
   const view = shellView(docker.data, seenRunning);
   const appView = ready && !unauthorized && !failed && view !== "status";
-  const width = appView ? "max-w-7xl" : "max-w-5xl";
+  // Subscribe to navigation, but parse the raw pathname so encoded names stay intact.
+  useLocation();
+  const route = parseExplorerPath(window.location.pathname);
+  const fullWidth = appView && (route?.kind === "table" || route?.kind === "editor");
+  const width = fullWidth ? "max-w-none" : appView ? "max-w-7xl" : "max-w-5xl";
 
   return (
     <div className={`mx-auto flex min-h-dvh flex-col px-6 py-8 sm:px-10 ${width}`}>
