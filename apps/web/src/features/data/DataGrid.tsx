@@ -220,10 +220,7 @@ export function DataGrid(props: DataGridProps) {
       aria-colcount={columns.length}
       aria-activedescendant={activeId}
       onKeyDown={onKeyDown}
-      style={{
-        height: HEADER_HEIGHT + tableRows.length * ROW_HEIGHT + 2,
-        scrollPaddingLeft: gutter,
-      }}
+      style={{ scrollPaddingLeft: gutter }}
       className={`${GRID_CLASS} ${props.busy ? "opacity-60" : ""}`}
     >
       <div role="rowgroup" className="sticky top-0 z-20" style={{ width }}>
