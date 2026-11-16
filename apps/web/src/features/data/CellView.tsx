@@ -1,4 +1,5 @@
 import type { CellValue, ColumnMeta } from "@dpilot/shared";
+import type { ReactNode } from "react";
 import { buttonClass } from "../../ui/button.ts";
 import { CopyButton } from "../../ui/CopyButton.tsx";
 import { formatCell } from "./grid-model.ts";
@@ -15,8 +16,14 @@ function copyText(value: CellValue): string {
 }
 
 /** The full value of the active cell, which the grid itself only shows clipped. */
-export function ValuePanel(props: { column: ColumnMeta; value: CellValue; onClose: () => void }) {
-  const { column, value, onClose } = props;
+export function ValuePanel(props: {
+  column: ColumnMeta;
+  value: CellValue;
+  onClose: () => void;
+  /** Controls for this kind of cell, such as a binary column's download and replace. */
+  actions?: ReactNode;
+}) {
+  const { column, value, onClose, actions } = props;
   return (
     <section aria-label="Cell value" className="flex min-w-0 flex-col gap-3 text-sm">
       <header className="flex items-baseline justify-between gap-3">
@@ -52,6 +59,7 @@ export function ValuePanel(props: { column: ColumnMeta; value: CellValue; onClos
           {String(value)}
         </pre>
       )}
+      {actions}
     </section>
   );
 }

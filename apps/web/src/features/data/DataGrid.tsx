@@ -1,6 +1,6 @@
 // biome-ignore-all lint/a11y: a virtualised ARIA grid positions rows absolutely, so native table
 // elements cannot be used; the container owns focus (aria-activedescendant) and the keyboard.
-import type { CellValue, ColumnKind, ColumnMeta, Sort } from "@dpilot/shared";
+import type { CellValue, ColumnKind, ColumnMeta, EditValue, RowKey, Sort } from "@dpilot/shared";
 import {
   createColumnHelper,
   flexRender,
@@ -11,11 +11,34 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef } from "react";
 import { CellView } from "./CellView.tsx";
+import {
+  describeEdit,
+  draftOf,
+  isEditableColumn,
+  type PendingEdits,
+  rowId,
+  toCellDraft,
+} from "./edit-model.ts";
 import { isNumericKind } from "./grid-model.ts";
+import { CellEditor } from "./RowEditor.tsx";
 
 export interface ActiveCell {
   row: number;
   col: number;
+}
+
+/** Present only when the table is editable, so its absence means the grid is read-only. */
+export interface GridEditing {
+  /** The server's key for each row of the page, in row order. */
+  keys: readonly RowKey[];
+  pending: PendingEdits;
+  editCell: ActiveCell | null;
+  selected: ReadonlySet<string>;
+  onToggleRow: (id: string, on: boolean) => void;
+  onToggleAll: (on: boolean) => void;
+  onStartEdit: (cell: ActiveCell) => void;
+  onCommit: (cell: ActiveCell, value: EditValue) => void;
+  onCancel: () => void;
 }
 
 interface DataGridProps {
@@ -28,6 +51,7 @@ interface DataGridProps {
   onSort: (column: string, additive: boolean) => void;
   active: ActiveCell | null;
   onActiveChange: (cell: ActiveCell) => void;
+  editing?: GridEditing;
   label: string;
   busy: boolean;
 }
@@ -35,6 +59,7 @@ interface DataGridProps {
 const ROW_HEIGHT = 32;
 const HEADER_HEIGHT = 48;
 const GUTTER_WIDTH = 56;
+const EDIT_GUTTER_WIDTH = 84;
 const PAGE_STEP = 10;
 
 const KIND_WIDTHS: Record<ColumnKind, number> = {
@@ -81,6 +106,15 @@ function useColumnDefs(columns: readonly ColumnMeta[]) {
   );
 }
 
+function PendingCell({ value }: { value: EditValue }) {
+  const { text, muted } = describeEdit(value);
+  return (
+    <span title="Not saved yet" className={muted ? "text-slate italic" : undefined}>
+      {text}
+    </span>
+  );
+}
+
 function clamp(value: number, max: number): number {
   return Math.min(Math.max(value, 0), Math.max(max, 0));
 }
@@ -94,6 +128,8 @@ function sortLabel(sort: readonly Sort[], column: string): string {
 
 export function DataGrid(props: DataGridProps) {
   const { columns, primaryKey, rows, firstRow, sort, onSort, active, onActiveChange } = props;
+  const { editing } = props;
+  const gutter = editing === undefined ? GUTTER_WIDTH : EDIT_GUTTER_WIDTH;
   const gridId = useId();
   const scroller = useRef<HTMLDivElement>(null);
   const defs = useColumnDefs(columns);
@@ -108,7 +144,10 @@ export function DataGrid(props: DataGridProps) {
   });
   const tableRows = table.getRowModel().rows;
   const headers = table.getFlatHeaders();
-  const width = GUTTER_WIDTH + headers.reduce((sum, h) => sum + h.getSize(), 0);
+  const width = gutter + headers.reduce((sum, h) => sum + h.getSize(), 0);
+  const allSelected =
+    editing !== undefined && editing.keys.length > 0 && editing.selected.size >= rows.length;
+  const someSelected = editing !== undefined && editing.selected.size > 0 && !allSelected;
 
   const virtualizer = useVirtualizer({
     count: tableRows.length,
@@ -138,6 +177,21 @@ export function DataGrid(props: DataGridProps) {
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.target !== event.currentTarget || tableRows.length === 0) return;
     const at = active ?? { row: 0, col: 0 };
+    if (editing !== undefined && active !== null) {
+      const column = columns[at.col];
+      if ((event.key === "Enter" || event.key === "F2") && column && isEditableColumn(column)) {
+        event.preventDefault();
+        editing.onStartEdit(at);
+        return;
+      }
+      const key = editing.keys[at.row];
+      if (event.key === " " && key !== undefined) {
+        event.preventDefault();
+        const id = rowId(key);
+        editing.onToggleRow(id, !editing.selected.has(id));
+        return;
+      }
+    }
     const jump = event.ctrlKey || event.metaKey;
     const moves: Record<string, ActiveCell> = {
       ArrowDown: { row: at.row + 1, col: at.col },
@@ -168,7 +222,7 @@ export function DataGrid(props: DataGridProps) {
       onKeyDown={onKeyDown}
       style={{
         height: HEADER_HEIGHT + tableRows.length * ROW_HEIGHT + 2,
-        scrollPaddingLeft: GUTTER_WIDTH,
+        scrollPaddingLeft: gutter,
       }}
       className={`${GRID_CLASS} ${props.busy ? "opacity-60" : ""}`}
     >
@@ -180,10 +234,21 @@ export function DataGrid(props: DataGridProps) {
           style={{ height: HEADER_HEIGHT }}
         >
           <div
-            aria-hidden
-            className="sticky left-0 z-10 shrink-0 border-r border-b border-rule bg-chart"
-            style={{ width: GUTTER_WIDTH }}
-          />
+            className="sticky left-0 z-10 flex shrink-0 items-end justify-center border-r border-b border-rule bg-chart pb-2"
+            style={{ width: gutter }}
+          >
+            {editing !== undefined && (
+              <input
+                type="checkbox"
+                aria-label="Select all rows on this page"
+                checked={allSelected}
+                ref={(el) => {
+                  if (el !== null) el.indeterminate = someSelected;
+                }}
+                onChange={(e) => editing.onToggleAll(e.target.checked)}
+              />
+            )}
+          </div>
           {headers.map((header, col) => {
             const meta = columns[col];
             const state = sortLabel(sort, header.column.id);
@@ -236,20 +301,44 @@ export function DataGrid(props: DataGridProps) {
         {virtualizer.getVirtualItems().map((item) => {
           const row = tableRows[item.index];
           if (row === undefined) return null;
+          const rowKey = editing?.keys[item.index];
+          const id = rowKey === undefined ? null : rowId(rowKey);
+          const pendingRow = id === null ? undefined : editing?.pending.get(id);
+          const selected = id !== null && editing?.selected.has(id) === true;
           return (
             <div
               key={row.id}
               role="row"
               aria-rowindex={item.index + 2}
-              className="group absolute left-0 flex"
+              aria-selected={editing === undefined ? undefined : selected}
+              className={`group absolute left-0 flex ${selected ? "bg-flag/10" : ""}`}
               style={{ top: item.start, height: ROW_HEIGHT, width }}
             >
-              <div role="rowheader" className={ROW_NUMBER_CLASS} style={{ width: GUTTER_WIDTH }}>
-                {firstRow + item.index}
+              <div
+                role="rowheader"
+                className={`${ROW_NUMBER_CLASS} ${editing === undefined ? "" : "flex items-center justify-between"}`}
+                style={{ width: gutter }}
+              >
+                {editing !== undefined && id !== null && (
+                  <input
+                    type="checkbox"
+                    aria-label={`Select row ${firstRow + item.index}`}
+                    checked={selected}
+                    onChange={(e) => editing.onToggleRow(id, e.target.checked)}
+                  />
+                )}
+                <span>{firstRow + item.index}</span>
               </div>
               {row.getVisibleCells().map((cell, col) => {
                 const isActive = active?.row === item.index && active.col === col;
-                const numeric = isNumericKind(columns[col]?.kind ?? "text");
+                const meta = columns[col];
+                const numeric = isNumericKind(meta?.kind ?? "text");
+                const here = { row: item.index, col };
+                const isEditing =
+                  editing?.editCell?.row === item.index && editing.editCell.col === col;
+                const pending = meta === undefined ? undefined : pendingRow?.values[meta.name];
+                const canEdit =
+                  editing !== undefined && meta !== undefined && isEditableColumn(meta);
                 return (
                   <div
                     key={cell.id}
@@ -257,16 +346,42 @@ export function DataGrid(props: DataGridProps) {
                     role="gridcell"
                     aria-colindex={col + 1}
                     aria-selected={isActive}
+                    aria-readonly={editing === undefined || !canEdit}
                     onClick={() => {
-                      onActiveChange({ row: item.index, col });
+                      if (isEditing) return;
+                      onActiveChange(here);
                       scroller.current?.focus({ preventScroll: true });
                     }}
-                    className={[CELL_CLASS, numeric && "text-right", isActive && ACTIVE_CLASS]
+                    onDoubleClick={() => {
+                      if (editing !== undefined && canEdit) editing.onStartEdit(here);
+                    }}
+                    className={[
+                      CELL_CLASS,
+                      numeric && "text-right",
+                      pending !== undefined && "bg-flag/25 text-ink",
+                      isEditing && "relative overflow-visible!",
+                      isActive && ACTIVE_CLASS,
+                    ]
                       .filter(Boolean)
                       .join(" ")}
                     style={{ width: cell.column.getSize() }}
                   >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    {isEditing && editing !== undefined && meta !== undefined ? (
+                      <CellEditor
+                        column={meta}
+                        initial={
+                          pending === undefined
+                            ? draftOf(row.original[col] ?? null)
+                            : toCellDraft(pending)
+                        }
+                        onCommit={(value) => editing.onCommit(here, value)}
+                        onCancel={editing.onCancel}
+                      />
+                    ) : pending !== undefined ? (
+                      <PendingCell value={pending} />
+                    ) : (
+                      flexRender(cell.column.columnDef.cell, cell.getContext())
+                    )}
                   </div>
                 );
               })}

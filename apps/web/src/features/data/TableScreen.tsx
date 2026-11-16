@@ -1,16 +1,31 @@
-import { type Filter, getEngine, type RowsQuery, type Sort } from "@dpilot/shared";
+import { type EditValue, type Filter, getEngine, type RowsQuery, type Sort } from "@dpilot/shared";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
-import { useRowCount, useRows, useTableMeta } from "../../api/data.ts";
+import { ApiError } from "../../api/client.ts";
+import { useRowCount, useRows, useTableMeta, useUpdateRow } from "../../api/data.ts";
 import { buttonClass } from "../../ui/button.ts";
 import { inputClass } from "../../ui/form.tsx";
 import { databaseHref } from "../explorer/paths.ts";
 import { ErrorLine, useTarget } from "../explorer/ServerOverview.tsx";
 import { AggregateBar } from "./AggregateBar.tsx";
+import { BlobCell } from "./BlobCell.tsx";
 import { ValuePanel } from "./CellView.tsx";
-import { type ActiveCell, DataGrid } from "./DataGrid.tsx";
+import { type ActiveCell, DataGrid, type GridEditing } from "./DataGrid.tsx";
+import { DeleteRowsDialog } from "./DeleteRowsDialog.tsx";
+import {
+  countChanges,
+  describeEditError,
+  describeKey,
+  discard,
+  failRow,
+  type PendingEdits,
+  rowId,
+  setCell,
+  toUpdates,
+} from "./edit-model.ts";
 import { FilterBar } from "./FilterBar.tsx";
 import { pageLabel, toggleSort } from "./grid-model.ts";
+import { InsertRowForm } from "./RowEditor.tsx";
 
 interface TableScreenProps {
   target: string;
@@ -47,6 +62,15 @@ export function TableScreen({ target, db, schema, table }: TableScreenProps) {
   const searchId = useId();
   const sizeId = useId();
   const gridArea = useRef<HTMLDivElement>(null);
+  const addButton = useRef<HTMLButtonElement>(null);
+
+  const [pending, setPending] = useState<PendingEdits>(new Map());
+  const [editCell, setEditCell] = useState<ActiveCell | null>(null);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [adding, setAdding] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const update = useUpdateRow(target, db);
 
   const settled = useDebounced(searchText.trim(), SEARCH_DELAY_MS);
   const search = settled === "" ? null : settled;
@@ -55,8 +79,19 @@ export function TableScreen({ target, db, schema, table }: TableScreenProps) {
   // Any change to what is being asked for starts again from the first page.
   useEffect(() => {
     setOffset(0);
-    setActive(null);
   }, [sort, filters, search, limit]);
+
+  // Which rows are shown changed, so the active, edited and selected cells no longer apply.
+  useEffect(() => {
+    setActive(null);
+    setEditCell(null);
+    setSelected(new Set());
+  }, [sort, filters, search, limit, offset]);
+
+  useEffect(() => {
+    setPending(new Map());
+    setAdding(false);
+  }, [target, db, schema, table]);
 
   const panelOpen = active !== null;
   // Esc closes the value panel from the grid or from inside the panel itself.
@@ -75,9 +110,13 @@ export function TableScreen({ target, db, schema, table }: TableScreenProps) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [panelOpen]);
 
+  function focusGrid() {
+    gridArea.current?.querySelector<HTMLElement>('[role="grid"]')?.focus();
+  }
+
   function closePanel() {
     setActive(null);
-    gridArea.current?.querySelector<HTMLElement>('[role="grid"]')?.focus();
+    focusGrid();
   }
   const query: RowsQuery = { ref, filters, search, sort, offset, limit };
   const rows = useRows(target, db, query, ready);
@@ -86,6 +125,67 @@ export function TableScreen({ target, db, schema, table }: TableScreenProps) {
 
   const columns = meta.data?.columns ?? [];
   const pageRows = rows.data?.rows ?? [];
+  const pageKeys = rows.data?.keys ?? null;
+  const editable = meta.data?.editable === true;
+  const notEditableReason = meta.data?.readOnlyReason ?? "This table can't be edited.";
+  const changes = countChanges(pending);
+  const failed = [...pending.values()].filter((row) => row.error !== null);
+  const selectedKeys = (pageKeys ?? []).filter((key) => selected.has(rowId(key)));
+
+  function commitCell(cell: ActiveCell, value: EditValue) {
+    const key = pageKeys?.[cell.row];
+    const column = columns[cell.col];
+    if (key === undefined || column === undefined) return;
+    const original = pageRows[cell.row]?.[cell.col] ?? null;
+    setPending((current) => setCell(current, key, column.name, value, original));
+    setEditCell(null);
+    focusGrid();
+  }
+
+  async function saveAll() {
+    setSaving(true);
+    let next = pending;
+    for (const request of toUpdates(pending, ref)) {
+      try {
+        await update.mutateAsync(request);
+        next = discard(next, request.key);
+      } catch (error) {
+        const reason =
+          error instanceof ApiError ? describeEditError(error) : "Dpilot couldn't save this row.";
+        next = failRow(next, request.key, reason);
+      }
+      setPending(next);
+    }
+    setSaving(false);
+    focusGrid();
+  }
+
+  const editing: GridEditing | undefined =
+    editable && pageKeys !== null
+      ? {
+          keys: pageKeys,
+          pending,
+          editCell,
+          selected,
+          onToggleRow: (id, on) =>
+            setSelected((current) => {
+              const next = new Set(current);
+              if (on) next.add(id);
+              else next.delete(id);
+              return next;
+            }),
+          onToggleAll: (on) => setSelected(new Set(on ? pageKeys.map(rowId) : [])),
+          onStartEdit: (cell) => {
+            setActive(cell);
+            setEditCell(cell);
+          },
+          onCommit: commitCell,
+          onCancel: () => {
+            setEditCell(null);
+            focusGrid();
+          },
+        }
+      : undefined;
   const lastPage = total === null ? pageRows.length < limit : offset + pageRows.length >= total;
   const kind = meta.data?.kind === "view" ? "View" : "Table";
   const where = schema === null ? db : `${db} · ${schema}`;
@@ -192,6 +292,98 @@ export function TableScreen({ target, db, schema, table }: TableScreenProps) {
             <FilterBar columns={columns} onApply={setFilters} />
           </div>
 
+          <div role="toolbar" aria-label="Edit rows" className="flex flex-wrap items-center gap-3">
+            <button
+              ref={addButton}
+              type="button"
+              disabled={!editable}
+              title={editable ? undefined : notEditableReason}
+              aria-expanded={adding}
+              onClick={() => setAdding(true)}
+              className={`${buttonClass.secondary} py-1.5`}
+            >
+              Add row
+            </button>
+            <button
+              type="button"
+              disabled={!editable || selectedKeys.length === 0}
+              title={editable ? undefined : notEditableReason}
+              onClick={() => setDeleting(true)}
+              className={`${buttonClass.secondary} py-1.5`}
+            >
+              {selectedKeys.length > 0 ? `Delete rows (${selectedKeys.length})` : "Delete rows"}
+            </button>
+            {changes > 0 && (
+              <>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void saveAll()}
+                  className={`${buttonClass.primary} py-1.5`}
+                >
+                  {saving ? "Saving…" : `Save ${changes} ${changes === 1 ? "change" : "changes"}`}
+                </button>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => {
+                    setPending(discard(pending));
+                    focusGrid();
+                  }}
+                  className={`${buttonClass.secondary} py-1.5`}
+                >
+                  Discard
+                </button>
+              </>
+            )}
+            {editable && (
+              <p className="text-sm text-slate">Enter or double-click a cell to edit it.</p>
+            )}
+          </div>
+
+          {failed.length > 0 && (
+            <ul role="alert" className="flex flex-col gap-2">
+              {failed.map((row) => (
+                <li key={rowId(row.key)} className="border-l-2 border-down pl-4">
+                  <span className="font-mono text-sm">{describeKey(row.key)}</span>
+                  {" — "}
+                  {row.error}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {adding && meta.data !== undefined && editable && (
+            <InsertRowForm
+              target={target}
+              db={db}
+              meta={meta.data}
+              tableRef={ref}
+              onClose={() => {
+                setAdding(false);
+                addButton.current?.focus();
+              }}
+            />
+          )}
+
+          <DeleteRowsDialog
+            open={deleting}
+            target={target}
+            db={db}
+            tableRef={ref}
+            keys={selectedKeys}
+            onClose={(deleted) => {
+              setDeleting(false);
+              if (deleted) {
+                setSelected(new Set());
+                setPending((current) =>
+                  selectedKeys.reduce((rest, key) => discard(rest, key), current),
+                );
+              }
+              focusGrid();
+            }}
+          />
+
           {rows.data === undefined ? (
             rows.isPending ? (
               <p className="text-slate">Loading rows…</p>
@@ -214,18 +406,41 @@ export function TableScreen({ target, db, schema, table }: TableScreenProps) {
                       sort={sort}
                       onSort={(column, additive) => setSort(toggleSort(sort, column, additive))}
                       active={active}
-                      onActiveChange={setActive}
+                      onActiveChange={(cell) => {
+                        setActive(cell);
+                        setEditCell(null);
+                      }}
+                      editing={editing}
                       label={`Rows of ${table}`}
                       busy={rows.isFetching}
                     />
                   </div>
-                  {activeColumn !== undefined && activeValue !== undefined && (
+                  {activeColumn !== undefined && activeValue !== undefined && active !== null && (
                     <aside
                       className={
                         "border border-rule bg-white/50 p-4 lg:sticky lg:top-8 lg:w-96 lg:shrink-0"
                       }
                     >
-                      <ValuePanel column={activeColumn} value={activeValue} onClose={closePanel} />
+                      <ValuePanel
+                        column={activeColumn}
+                        value={activeValue}
+                        onClose={closePanel}
+                        actions={
+                          activeColumn.kind === "binary" ? (
+                            <BlobCell
+                              key={`${active.row}-${active.col}-${offset}`}
+                              target={target}
+                              db={db}
+                              tableRef={ref}
+                              column={activeColumn.name}
+                              rowKey={pageKeys?.[active.row] ?? null}
+                              isNull={activeValue === null}
+                              editable={editable}
+                              reason={meta.data.readOnlyReason}
+                            />
+                          ) : undefined
+                        }
+                      />
                     </aside>
                   )}
                 </div>
